@@ -40,6 +40,7 @@ func init() {
 	rootCmd.PersistentFlags().IntP("port", "P", 3306, "MySQL port")
 	rootCmd.PersistentFlags().StringP("user", "u", "", "MySQL user")
 	rootCmd.PersistentFlags().StringP("password", "p", "", "MySQL password (will prompt if flag present without value)")
+	rootCmd.PersistentFlags().Lookup("password").NoOptDefVal = "" // Allow -p without value to trigger prompt
 	rootCmd.PersistentFlags().StringP("database", "d", "", "Target database")
 	rootCmd.PersistentFlags().StringP("socket", "S", "", "Unix socket path")
 	rootCmd.PersistentFlags().StringP("format", "f", "text", "Output format: text, plain, json, markdown")
@@ -72,5 +73,23 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	// Silently ignore missing config file — it's optional
-	viper.ReadInConfig()
+	if err := viper.ReadInConfig(); err == nil {
+		// Map nested config structure to flat keys that flags expect
+		// Only set these if the flags haven't been explicitly set by the user
+		if !rootCmd.PersistentFlags().Changed("host") && viper.IsSet("connections.default.host") {
+			viper.Set("host", viper.GetString("connections.default.host"))
+		}
+		if !rootCmd.PersistentFlags().Changed("port") && viper.IsSet("connections.default.port") {
+			viper.Set("port", viper.GetInt("connections.default.port"))
+		}
+		if !rootCmd.PersistentFlags().Changed("user") && viper.IsSet("connections.default.user") {
+			viper.Set("user", viper.GetString("connections.default.user"))
+		}
+		if !rootCmd.PersistentFlags().Changed("database") && viper.IsSet("connections.default.database") {
+			viper.Set("database", viper.GetString("connections.default.database"))
+		}
+		if !rootCmd.PersistentFlags().Changed("format") && viper.IsSet("defaults.format") {
+			viper.Set("format", viper.GetString("defaults.format"))
+		}
+	}
 }

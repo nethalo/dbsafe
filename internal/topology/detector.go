@@ -86,10 +86,20 @@ func Detect(db *sql.DB) (*Info, error) {
 }
 
 func detectGalera(db *sql.DB, info *Info) (bool, error) {
-	// Check if wsrep provider is loaded
-	clusterSize, err := mysql.GetVariable(db, "wsrep_cluster_size")
-	if err != nil || clusterSize == "" {
+	// Check if wsrep is enabled
+	wsrepOn, _ := mysql.GetVariable(db, "wsrep_on")
+	if wsrepOn != "ON" {
 		return false, nil
+	}
+
+	// Check cluster size from status (more reliable than variable)
+	clusterSize, err := mysql.GetStatus(db, "wsrep_cluster_size")
+	if err != nil || clusterSize == "" {
+		// Fallback to variable
+		clusterSize, err = mysql.GetVariable(db, "wsrep_cluster_size")
+		if err != nil || clusterSize == "" {
+			return false, nil
+		}
 	}
 
 	size, _ := strconv.Atoi(clusterSize)

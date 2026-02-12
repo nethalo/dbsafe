@@ -60,6 +60,11 @@ var planCmd = &cobra.Command{
 			connCfg.Database = parsed.Database
 		}
 
+		// Require a database to be specified
+		if connCfg.Database == "" {
+			return fmt.Errorf("database not specified: use -d flag or specify database in SQL (e.g., ALTER TABLE mydb.users ...)")
+		}
+
 		// Prompt for password if not provided
 		if connCfg.Password == "" {
 			connCfg.Password = mysql.PromptPassword()
