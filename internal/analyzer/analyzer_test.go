@@ -11,20 +11,38 @@ import (
 // Helper to build a minimal Input for DDL tests.
 func ddlInput(op parser.DDLOperation, version mysql.ServerVersion, totalSizeBytes int64, topoType topology.Type) Input {
 	half := totalSizeBytes / 2
+	parsed := &parser.ParsedSQL{
+		Type:   parser.DDL,
+		RawSQL: "ALTER TABLE test ...",
+		Table:  "test",
+		DDLOp:  op,
+	}
+
+	// Set column names based on operation to ensure validation passes
+	switch op {
+	case parser.AddColumn:
+		parsed.ColumnName = "new_col" // Will be added
+	case parser.DropColumn, parser.ModifyColumn:
+		parsed.ColumnName = "existing_col" // Must exist
+	case parser.ChangeColumn:
+		parsed.OldColumnName = "existing_col" // Must exist
+		parsed.NewColumnName = "renamed_col"  // Must not exist
+	}
+
 	return Input{
-		Parsed: &parser.ParsedSQL{
-			Type:    parser.DDL,
-			RawSQL:  "ALTER TABLE test ...",
-			Table:   "test",
-			DDLOp:   op,
-		},
+		Parsed: parsed,
 		Meta: &mysql.TableMetadata{
-			Database:   "testdb",
-			Table:      "test",
-			DataLength: half,
-			IndexLength: totalSizeBytes - half,
-			RowCount:   1000,
+			Database:     "testdb",
+			Table:        "test",
+			DataLength:   half,
+			IndexLength:  totalSizeBytes - half,
+			RowCount:     1000,
 			AvgRowLength: 100,
+			// Add default columns so validation doesn't fail
+			Columns: []mysql.ColumnInfo{
+				{Name: "id", Type: "int", Position: 1},
+				{Name: "existing_col", Type: "varchar(100)", Position: 2},
+			},
 		},
 		Version: version,
 		Topo:    &topology.Info{Type: topoType},
@@ -757,6 +775,170 @@ func TestFormatNumber(t *testing.T) {
 
 // =============================================================
 // Helpers
+// =============================================================
+// Column Validation Tests
+// =============================================================
+
+func TestColumnValidation_AddColumn_AlreadyExists(t *testing.T) {
+	input := ddlInput(parser.AddColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.ColumnName = "existing_col"
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if !containsWarning(result.Warnings, "already exists") {
+		t.Errorf("Expected warning about column already existing, got: %v", result.Warnings)
+	}
+	if result.Risk != RiskDangerous {
+		t.Errorf("Expected RiskDangerous, got: %v", result.Risk)
+	}
+}
+
+func TestColumnValidation_AddColumn_NewColumn(t *testing.T) {
+	input := ddlInput(parser.AddColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.ColumnName = "new_col"
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if containsWarning(result.Warnings, "already exists") {
+		t.Errorf("Did not expect warning about column existing, got: %v", result.Warnings)
+	}
+	// Risk should be RiskSafe for INSTANT operations (8.0.35)
+	if result.Risk != RiskSafe {
+		t.Errorf("Expected RiskSafe for new column on 8.0.35, got: %v", result.Risk)
+	}
+}
+
+func TestColumnValidation_DropColumn_DoesNotExist(t *testing.T) {
+	input := ddlInput(parser.DropColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.ColumnName = "nonexistent_col"
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if !containsWarning(result.Warnings, "does not exist") {
+		t.Errorf("Expected warning about column not existing, got: %v", result.Warnings)
+	}
+	if result.Risk != RiskDangerous {
+		t.Errorf("Expected RiskDangerous, got: %v", result.Risk)
+	}
+}
+
+func TestColumnValidation_DropColumn_Exists(t *testing.T) {
+	input := ddlInput(parser.DropColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.ColumnName = "existing_col"
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if containsWarning(result.Warnings, "does not exist") {
+		t.Errorf("Did not expect warning about column not existing, got: %v", result.Warnings)
+	}
+}
+
+func TestColumnValidation_ModifyColumn_DoesNotExist(t *testing.T) {
+	input := ddlInput(parser.ModifyColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.ColumnName = "nonexistent_col"
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if !containsWarning(result.Warnings, "does not exist") {
+		t.Errorf("Expected warning about column not existing, got: %v", result.Warnings)
+	}
+	if result.Risk != RiskDangerous {
+		t.Errorf("Expected RiskDangerous, got: %v", result.Risk)
+	}
+}
+
+func TestColumnValidation_ChangeColumn_OldDoesNotExist(t *testing.T) {
+	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.OldColumnName = "nonexistent_col"
+	input.Parsed.NewColumnName = "new_name"
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if !containsWarning(result.Warnings, "Source column") || !containsWarning(result.Warnings, "does not exist") {
+		t.Errorf("Expected warning about source column not existing, got: %v", result.Warnings)
+	}
+	if result.Risk != RiskDangerous {
+		t.Errorf("Expected RiskDangerous, got: %v", result.Risk)
+	}
+}
+
+func TestColumnValidation_ChangeColumn_NewAlreadyExists(t *testing.T) {
+	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.OldColumnName = "existing_col"
+	input.Parsed.NewColumnName = "id" // Already exists
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if !containsWarning(result.Warnings, "Target column") || !containsWarning(result.Warnings, "already exists") {
+		t.Errorf("Expected warning about target column already existing, got: %v", result.Warnings)
+	}
+	if result.Risk != RiskDangerous {
+		t.Errorf("Expected RiskDangerous, got: %v", result.Risk)
+	}
+}
+
+func TestColumnValidation_ChangeColumn_ValidRename(t *testing.T) {
+	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.OldColumnName = "existing_col"
+	input.Parsed.NewColumnName = "renamed_col"
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if containsWarning(result.Warnings, "does not exist") || containsWarning(result.Warnings, "already exists") {
+		t.Errorf("Did not expect column validation warnings, got: %v", result.Warnings)
+	}
+}
+
+func TestColumnValidation_ChangeColumn_SameNameAllowed(t *testing.T) {
+	// CHANGE COLUMN can be used to change just the type, keeping the same name
+	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.OldColumnName = "existing_col"
+	input.Parsed.NewColumnName = "existing_col" // Same name
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	// Should not warn about "already exists" when old and new names are the same
+	if containsWarning(result.Warnings, "already exists") {
+		t.Errorf("Should not warn about target already existing when renaming to same name, got: %v", result.Warnings)
+	}
+}
+
 // =============================================================
 
 func containsWarning(warnings []string, substr string) bool {

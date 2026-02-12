@@ -122,58 +122,84 @@ func Analyze(input Input) *Result {
 func analyzeDDL(input Input, result *Result) {
 	result.DDLOp = input.Parsed.DDLOp
 
+	// Validate column existence before proceeding
+	validateColumnOperation(input, result)
+
 	// Classify using the DDL matrix
 	v := input.Version
 	result.Classification = ClassifyDDLWithContext(input.Parsed, v.Major, v.Minor, v.Patch)
 
-	// Determine risk and method
+	// Determine risk and method based on algorithm
+	// Note: Column validation may have already set Risk to RiskDangerous, which we preserve
 	switch result.Classification.Algorithm {
 	case AlgoInstant:
-		result.Risk = RiskSafe
+		if result.Risk != RiskDangerous {
+			result.Risk = RiskSafe
+		}
 		result.Method = ExecDirect
-		result.Recommendation = fmt.Sprintf(
-			"This operation uses INSTANT algorithm in MySQL %s. No table rebuild, no lock, no replication impact. Execute directly.",
-			v.String(),
-		)
+		if result.Risk != RiskDangerous {
+			result.Recommendation = fmt.Sprintf(
+				"This operation uses INSTANT algorithm in MySQL %s. No table rebuild, no lock, no replication impact. Execute directly.",
+				v.String(),
+			)
+		}
 
 	case AlgoInplace:
 		if result.Classification.Lock == LockNone {
 			if input.Meta.TotalSize() > 10*1024*1024*1024 { // > 10 GB
-				result.Risk = RiskCaution
-				result.Recommendation = "INPLACE with no lock, but table is large. I/O impact during index build. Consider scheduling during low-traffic window."
+				if result.Risk != RiskDangerous {
+					result.Risk = RiskCaution
+					result.Recommendation = "INPLACE with no lock, but table is large. I/O impact during index build. Consider scheduling during low-traffic window."
+				}
 			} else {
-				result.Risk = RiskSafe
-				result.Recommendation = "INPLACE with no lock. Concurrent DML allowed. Safe to run directly."
+				if result.Risk != RiskDangerous {
+					result.Risk = RiskSafe
+					result.Recommendation = "INPLACE with no lock. Concurrent DML allowed. Safe to run directly."
+				}
 			}
 			result.Method = ExecDirect
 		} else {
 			// INPLACE with lock
 			if input.Meta.TotalSize() > 1*1024*1024*1024 { // > 1 GB
-				result.Risk = RiskDangerous
+				if result.Risk != RiskDangerous {
+					result.Risk = RiskDangerous
+				}
 				result.Method = ExecPtOSC
-				result.Recommendation = "INPLACE with SHARED lock on a large table. Use pt-online-schema-change or gh-ost to avoid blocking writes."
+				if result.Risk == RiskDangerous && result.Recommendation == "" {
+					result.Recommendation = "INPLACE with SHARED lock on a large table. Use pt-online-schema-change or gh-ost to avoid blocking writes."
+				}
 			} else {
-				result.Risk = RiskCaution
+				if result.Risk != RiskDangerous {
+					result.Risk = RiskCaution
+					result.Recommendation = "INPLACE with SHARED lock. Reads allowed but writes blocked. Table is small enough for direct execution during low-traffic window."
+				}
 				result.Method = ExecDirect
-				result.Recommendation = "INPLACE with SHARED lock. Reads allowed but writes blocked. Table is small enough for direct execution during low-traffic window."
 			}
 		}
 
 	case AlgoCopy:
 		if input.Meta.TotalSize() > 1*1024*1024*1024 { // > 1 GB
-			result.Risk = RiskDangerous
+			if result.Risk != RiskDangerous {
+				result.Risk = RiskDangerous
+			}
 			// Galera: can't use gh-ost
 			if input.Topo.Type == topology.Galera {
 				result.Method = ExecPtOSC
-				result.Recommendation = "COPY algorithm on a large table in Galera/PXC. Use pt-online-schema-change with --max-flow-ctl. Do NOT use gh-ost (incompatible with Galera writeset replication)."
+				if result.Recommendation == "" {
+					result.Recommendation = "COPY algorithm on a large table in Galera/PXC. Use pt-online-schema-change with --max-flow-ctl. Do NOT use gh-ost (incompatible with Galera writeset replication)."
+				}
 			} else {
 				result.Method = ExecGhost
-				result.Recommendation = "COPY algorithm on a large table. Use gh-ost (preferred) or pt-online-schema-change to avoid blocking writes."
+				if result.Recommendation == "" {
+					result.Recommendation = "COPY algorithm on a large table. Use gh-ost (preferred) or pt-online-schema-change to avoid blocking writes."
+				}
 			}
 		} else {
-			result.Risk = RiskCaution
+			if result.Risk != RiskDangerous {
+				result.Risk = RiskCaution
+				result.Recommendation = "COPY algorithm rebuilds the table. Table is small enough for direct execution during low-traffic window."
+			}
 			result.Method = ExecDirect
-			result.Recommendation = "COPY algorithm rebuilds the table. Table is small enough for direct execution during low-traffic window."
 		}
 	}
 
@@ -258,6 +284,60 @@ func estimateAffectedRows(input Input) int64 {
 	// Conservative estimate: assume EXPLAIN will be called by the caller
 	// Return 0 to indicate "needs EXPLAIN"
 	return 0
+}
+
+func validateColumnOperation(input Input, result *Result) {
+	p := input.Parsed
+
+	// Helper to check if column exists
+	columnExists := func(colName string) bool {
+		for _, col := range input.Meta.Columns {
+			if col.Name == colName {
+				return true
+			}
+		}
+		return false
+	}
+
+	switch p.DDLOp {
+	case parser.AddColumn:
+		if columnExists(p.ColumnName) {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Column '%s' already exists! This ADD COLUMN operation will fail.", p.ColumnName))
+			result.Risk = RiskDangerous
+		}
+
+	case parser.DropColumn:
+		if !columnExists(p.ColumnName) {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Column '%s' does not exist! This DROP COLUMN operation will fail.", p.ColumnName))
+			result.Risk = RiskDangerous
+		}
+
+	case parser.ModifyColumn:
+		if !columnExists(p.ColumnName) {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Column '%s' does not exist! This MODIFY COLUMN operation will fail.", p.ColumnName))
+			result.Risk = RiskDangerous
+		}
+
+	case parser.ChangeColumn:
+		oldExists := columnExists(p.OldColumnName)
+		newExists := columnExists(p.NewColumnName)
+
+		if !oldExists {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Source column '%s' does not exist! This CHANGE COLUMN operation will fail.", p.OldColumnName))
+			result.Risk = RiskDangerous
+		}
+
+		// Only warn about new name if it's different from old name and already exists
+		if p.OldColumnName != p.NewColumnName && newExists {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Target column name '%s' already exists! This CHANGE COLUMN operation will fail.", p.NewColumnName))
+			result.Risk = RiskDangerous
+		}
+	}
 }
 
 func applyTopologyWarnings(input Input, result *Result) {

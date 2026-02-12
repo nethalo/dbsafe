@@ -62,6 +62,8 @@ type ParsedSQL struct {
 	WhereClause   string // for DML: the WHERE as string
 	HasWhere      bool
 	ColumnName    string // for ADD/DROP/MODIFY COLUMN
+	OldColumnName string // for CHANGE COLUMN
+	NewColumnName string // for CHANGE COLUMN
 	ColumnDef     string // full column definition for ADD COLUMN
 	IsFirstAfter  bool   // ADD COLUMN ... FIRST or AFTER
 	IndexName     string // for ADD/DROP INDEX
@@ -202,6 +204,15 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 
 	case *sqlparser.DropColumn:
 		result.ColumnName = opt.Name.Name.String()
+
+	case *sqlparser.ModifyColumn:
+		result.ColumnName = opt.NewColDefinition.Name.String()
+		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
+
+	case *sqlparser.ChangeColumn:
+		result.OldColumnName = opt.OldColumn.Name.String()
+		result.NewColumnName = opt.NewColDefinition.Name.String()
+		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
 
 	case *sqlparser.AddIndexDefinition:
 		result.IndexName = opt.IndexDefinition.Info.Name.String()

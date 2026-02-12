@@ -17,6 +17,7 @@ type TableMetadata struct {
 	AutoIncrement int64
 	RowFormat     string
 	CreateTable   string // full CREATE TABLE statement
+	Columns       []ColumnInfo
 	Indexes       []IndexInfo
 	ForeignKeys   []ForeignKeyInfo
 	Triggers      []TriggerInfo
@@ -55,6 +56,17 @@ type TriggerInfo struct {
 	Event     string // INSERT, UPDATE, DELETE
 	Timing    string // BEFORE, AFTER
 	Statement string
+}
+
+// ColumnInfo describes a single column in a table.
+type ColumnInfo struct {
+	Name         string
+	Type         string
+	Nullable     bool
+	Default      *string
+	Position     int
+	CharacterSet *string
+	Collation    *string
 }
 
 // GetTableMetadata collects comprehensive metadata about a table.
@@ -97,6 +109,12 @@ func GetTableMetadata(db *sql.DB, database, table string) (*TableMetadata, error
 	err = db.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table)).Scan(&tblName, &createStmt)
 	if err == nil {
 		meta.CreateTable = createStmt
+	}
+
+	// Columns
+	meta.Columns, err = getColumns(db, database, table)
+	if err != nil {
+		return nil, fmt.Errorf("querying columns: %w", err)
 	}
 
 	// Indexes
@@ -232,6 +250,51 @@ func getTriggers(db *sql.DB, database, table string) ([]TriggerInfo, error) {
 			return nil, err
 		}
 		result = append(result, t)
+	}
+	return result, nil
+}
+
+func getColumns(db *sql.DB, database, table string) ([]ColumnInfo, error) {
+	rows, err := db.Query(`
+		SELECT
+			COLUMN_NAME,
+			COLUMN_TYPE,
+			IS_NULLABLE,
+			COLUMN_DEFAULT,
+			ORDINAL_POSITION,
+			CHARACTER_SET_NAME,
+			COLLATION_NAME
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+		ORDER BY ORDINAL_POSITION
+	`, database, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ColumnInfo
+	for rows.Next() {
+		var c ColumnInfo
+		var nullable string
+		var defaultVal, charSet, collation sql.NullString
+
+		if err := rows.Scan(&c.Name, &c.Type, &nullable, &defaultVal, &c.Position, &charSet, &collation); err != nil {
+			return nil, err
+		}
+
+		c.Nullable = (nullable == "YES")
+		if defaultVal.Valid {
+			c.Default = &defaultVal.String
+		}
+		if charSet.Valid {
+			c.CharacterSet = &charSet.String
+		}
+		if collation.Valid {
+			c.Collation = &collation.String
+		}
+
+		result = append(result, c)
 	}
 	return result, nil
 }
