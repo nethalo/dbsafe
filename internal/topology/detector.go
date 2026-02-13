@@ -66,17 +66,29 @@ func Detect(db *sql.DB) (*Info, error) {
 	info.SuperReadOnly = sro == "ON"
 
 	// Try Galera detection first (most specific)
-	if detected, err := detectGalera(db, info); err == nil && detected {
+	detected, err := detectGalera(db, info)
+	if err != nil {
+		return nil, fmt.Errorf("galera detection failed: %w", err)
+	}
+	if detected {
 		return info, nil
 	}
 
 	// Try Group Replication
-	if detected, err := detectGroupReplication(db, info); err == nil && detected {
+	detected, err = detectGroupReplication(db, info)
+	if err != nil {
+		return nil, fmt.Errorf("group replication detection failed: %w", err)
+	}
+	if detected {
 		return info, nil
 	}
 
 	// Try async/semisync replication
-	if detected, err := detectReplication(db, info); err == nil && detected {
+	detected, err = detectReplication(db, info)
+	if err != nil {
+		return nil, fmt.Errorf("replication detection failed: %w", err)
+	}
+	if detected {
 		return info, nil
 	}
 
@@ -87,7 +99,11 @@ func Detect(db *sql.DB) (*Info, error) {
 
 func detectGalera(db *sql.DB, info *Info) (bool, error) {
 	// Check if wsrep is enabled
-	wsrepOn, _ := mysql.GetVariable(db, "wsrep_on")
+	wsrepOn, err := mysql.GetVariable(db, "wsrep_on")
+	if err != nil {
+		// Actual error (not just variable doesn't exist)
+		return false, fmt.Errorf("failed to get wsrep_on: %w", err)
+	}
 	if wsrepOn != "ON" {
 		return false, nil
 	}
@@ -95,14 +111,20 @@ func detectGalera(db *sql.DB, info *Info) (bool, error) {
 	// Check cluster size from status (more reliable than variable)
 	clusterSize, err := mysql.GetStatus(db, "wsrep_cluster_size")
 	if err != nil || clusterSize == "" {
-		// Fallback to variable
+		// Status variable doesn't exist or is empty, fallback to variable
 		clusterSize, err = mysql.GetVariable(db, "wsrep_cluster_size")
-		if err != nil || clusterSize == "" {
+		if err != nil {
+			return false, fmt.Errorf("failed to get wsrep_cluster_size: %w", err)
+		}
+		if clusterSize == "" {
 			return false, nil
 		}
 	}
 
-	size, _ := strconv.Atoi(clusterSize)
+	size, err := strconv.Atoi(clusterSize)
+	if err != nil {
+		return false, fmt.Errorf("invalid wsrep_cluster_size value '%s': %w", clusterSize, err)
+	}
 	if size == 0 {
 		return false, nil
 	}
