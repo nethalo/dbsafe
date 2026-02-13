@@ -121,8 +121,8 @@ dbsafe plan "ALTER TABLE users ADD COLUMN email VARCHAR(255)"
 
 ## 🔬 What It Analyzes
 
-<details>
-<summary><strong>📋 DDL Operations (click to expand)</strong></summary>
+<details open>
+<summary><strong>📋 DDL Operations</strong></summary>
 
 <br>
 
@@ -144,8 +144,8 @@ dbsafe plan "ALTER TABLE users ADD COLUMN email VARCHAR(255)"
 
 </details>
 
-<details>
-<summary><strong>💥 DML Operations (click to expand)</strong></summary>
+<details open>
+<summary><strong>💥 DML Operations</strong></summary>
 
 <br>
 
@@ -161,8 +161,8 @@ dbsafe plan "ALTER TABLE users ADD COLUMN email VARCHAR(255)"
 
 </details>
 
-<details>
-<summary><strong>🌐 Topology Detection (click to expand)</strong></summary>
+<details open>
+<summary><strong>🌐 Topology Detection</strong></summary>
 
 <br>
 
