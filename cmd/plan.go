@@ -15,8 +15,9 @@ import (
 )
 
 var planCmd = &cobra.Command{
-	Use:   "plan [SQL statement]",
-	Short: "Analyze a DDL or DML statement before execution",
+	Use:          "plan [SQL statement]",
+	Short:        "Analyze a DDL or DML statement before execution",
+	SilenceUsage: true, // Don't show usage on errors
 	Long: `Analyze a MySQL DDL or DML statement and report:
   - Operation classification (INSTANT, INPLACE, COPY)
   - Locking behavior

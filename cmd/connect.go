@@ -12,9 +12,10 @@ import (
 )
 
 var connectCmd = &cobra.Command{
-	Use:   "connect",
-	Short: "Test connection and show topology info",
-	Long:  `Connect to a MySQL instance, detect topology (standalone, replica, Galera/PXC, Group Replication), and display cluster state.`,
+	Use:          "connect",
+	Short:        "Test connection and show topology info",
+	SilenceUsage: true, // Don't show usage on errors
+	Long:         `Connect to a MySQL instance, detect topology (standalone, replica, Galera/PXC, Group Replication), and display cluster state.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		connCfg := mysql.ConnectionConfig{
 			Host:     viper.GetString("host"),

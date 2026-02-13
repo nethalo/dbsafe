@@ -17,8 +17,9 @@ var configCmd = &cobra.Command{
 }
 
 var configInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Create config file interactively",
+	Use:          "init",
+	Short:        "Create config file interactively",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		home, err := os.UserHomeDir()
 		if err != nil {
