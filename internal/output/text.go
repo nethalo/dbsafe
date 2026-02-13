@@ -42,6 +42,20 @@ func (r *TextRenderer) RenderPlan(result *analyzer.Result) {
 		r.renderTopoBox(result, width)
 	}
 
+	// For unparsable DDL (OtherDDL), only show warnings - skip operation/recommendation/rollback
+	if result.DDLOp == parser.OtherDDL {
+		// Warnings
+		if len(result.Warnings) > 0 {
+			for _, w := range result.Warnings {
+				warnBox := WarningBoxStyle.Width(width).Render(
+					WarningText.Render(IconWarning+" Warning") + "\n" + w,
+				)
+				fmt.Fprintln(r.w, warnBox)
+			}
+		}
+		return // Skip operation, recommendation, and rollback sections
+	}
+
 	// Operation box
 	r.renderOperationBox(result, width)
 

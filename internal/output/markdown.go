@@ -48,6 +48,17 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 		fmt.Fprintln(r.w)
 	}
 
+	// For unparsable DDL, only show warnings
+	if result.DDLOp == parser.OtherDDL {
+		if len(result.Warnings) > 0 {
+			fmt.Fprintf(r.w, "## ⚠ Warnings\n\n")
+			for _, w := range result.Warnings {
+				fmt.Fprintf(r.w, "- **Warning:** %s\n", w)
+			}
+		}
+		return
+	}
+
 	// Operation
 	fmt.Fprintf(r.w, "## Operation\n\n")
 	if result.StatementType == parser.DDL {
