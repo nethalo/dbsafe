@@ -371,6 +371,79 @@ func TestAnalyzeDML_DeleteWithWhere_SmallRows(t *testing.T) {
 	}
 }
 
+// TestAnalyzeDML_WithEstimatedRows tests issue #11 fix
+// When EstimatedRows is provided via EXPLAIN, it should be used for calculation
+func TestAnalyzeDML_WithEstimatedRows(t *testing.T) {
+	// Simulate issue #11: DELETE with WHERE clause that affects most rows
+	// Table has 4,654,623 rows total
+	// EXPLAIN estimates 4,654,623 rows will be affected (100%)
+	input := dmlInput(parser.Delete, true, 4654623, 100, 10000, topology.Standalone)
+	input.EstimatedRows = 4654623 // EXPLAIN result from issue #11
+
+	result := Analyze(input)
+
+	// Should use the EstimatedRows, not return 0
+	if result.AffectedRows != 4654623 {
+		t.Errorf("AffectedRows = %d, want 4654623 (from EXPLAIN)", result.AffectedRows)
+	}
+
+	// Percentage should be 100%
+	if result.AffectedPct != 100.0 {
+		t.Errorf("AffectedPct = %.1f, want 100.0", result.AffectedPct)
+	}
+
+	// Should recommend chunking for this many rows
+	if result.Method != ExecChunked {
+		t.Errorf("Method = %q, want CHUNKED (large operation)", result.Method)
+	}
+
+	// Risk should be DANGEROUS due to large number of rows
+	if result.Risk != RiskDangerous {
+		t.Errorf("Risk = %q, want DANGEROUS (large operation)", result.Risk)
+	}
+}
+
+// TestAnalyzeDML_WithEstimatedRows_Medium tests medium-sized EXPLAIN estimate
+func TestAnalyzeDML_WithEstimatedRows_Medium(t *testing.T) {
+	// Medium size: 50K rows affected (EXPLAIN estimate)
+	input := dmlInput(parser.Delete, true, 1000000, 100, 10000, topology.Standalone)
+	input.EstimatedRows = 50000 // EXPLAIN says 50K rows
+
+	result := Analyze(input)
+
+	if result.AffectedRows != 50000 {
+		t.Errorf("AffectedRows = %d, want 50000", result.AffectedRows)
+	}
+
+	// 50K rows should trigger CAUTION, not chunking
+	if result.Risk != RiskCaution {
+		t.Errorf("Risk = %q, want CAUTION", result.Risk)
+	}
+
+	if result.Method != ExecDirect {
+		t.Errorf("Method = %q, want DIRECT", result.Method)
+	}
+}
+
+// TestAnalyzeDML_NoEstimateProvided_WithWhere tests backward compatibility
+// When no EstimatedRows provided and there's a WHERE, should return 0 (caller needs to run EXPLAIN)
+func TestAnalyzeDML_NoEstimateProvided_WithWhere(t *testing.T) {
+	input := dmlInput(parser.Delete, true, 1000000, 100, 10000, topology.Standalone)
+	// No EstimatedRows set (remains 0)
+
+	result := Analyze(input)
+
+	// Without EXPLAIN estimate, should return 0
+	if result.AffectedRows != 0 {
+		t.Errorf("AffectedRows = %d, want 0 (no EXPLAIN provided)", result.AffectedRows)
+	}
+
+	// Should still be safe since AffectedRows is 0
+	if result.Risk != RiskSafe {
+		t.Errorf("Risk = %q, want SAFE (default when no estimate)", result.Risk)
+	}
+}
+
 func TestAnalyzeDML_UpdateNoWhere(t *testing.T) {
 	input := dmlInput(parser.Update, false, 200000, 100, 10000, topology.Standalone)
 	result := Analyze(input)

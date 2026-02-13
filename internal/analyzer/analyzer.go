@@ -40,12 +40,13 @@ type ConnectionInfo struct {
 
 // Input holds everything the analyzer needs.
 type Input struct {
-	Parsed     *parser.ParsedSQL
-	Meta       *mysql.TableMetadata
-	Topo       *topology.Info
-	Version    mysql.ServerVersion
-	ChunkSize  int
-	Connection *ConnectionInfo // Optional: for generating executable commands
+	Parsed        *parser.ParsedSQL
+	Meta          *mysql.TableMetadata
+	Topo          *topology.Info
+	Version       mysql.ServerVersion
+	ChunkSize     int
+	Connection    *ConnectionInfo // Optional: for generating executable commands
+	EstimatedRows int64           // EXPLAIN-based row estimate for DML
 }
 
 // Result holds the complete analysis output.
@@ -314,14 +315,18 @@ func analyzeDML(input Input, result *Result) {
 }
 
 func estimateAffectedRows(input Input) int64 {
-	// The EXPLAIN-based estimate should have been collected in plan.go
-	// For now, use the table row count as a rough fallback
-	// In practice, this will come from EXPLAIN on the actual DML
+	// If EXPLAIN-based estimate was provided, use it
+	if input.EstimatedRows > 0 {
+		return input.EstimatedRows
+	}
+
+	// Fallback: if no WHERE clause, entire table is affected
 	if !input.Parsed.HasWhere {
 		return input.Meta.RowCount
 	}
-	// Conservative estimate: assume EXPLAIN will be called by the caller
-	// Return 0 to indicate "needs EXPLAIN"
+
+	// If no estimate provided and has WHERE, return 0
+	// (caller should provide EXPLAIN estimate for accurate results)
 	return 0
 }
 

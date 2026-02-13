@@ -97,14 +97,25 @@ var planCmd = &cobra.Command{
 			return fmt.Errorf("version detection failed: %w", err)
 		}
 
+		// For DML with WHERE clause, run EXPLAIN to estimate affected rows
+		var estimatedRows int64
+		if parsed.Type == parser.DML && parsed.HasWhere {
+			estimatedRows, err = mysql.EstimateRowsAffected(conn, parsed.RawSQL)
+			if err != nil {
+				// Log warning but continue with 0 estimate
+				fmt.Fprintf(os.Stderr, "Warning: EXPLAIN failed: %v\n", err)
+			}
+		}
+
 		// Run analysis
 		chunkSize, _ := cmd.Flags().GetInt("chunk-size")
 		result := analyzer.Analyze(analyzer.Input{
-			Parsed:    parsed,
-			Meta:      meta,
-			Topo:      topo,
-			Version:   version,
-			ChunkSize: chunkSize,
+			Parsed:        parsed,
+			Meta:          meta,
+			Topo:          topo,
+			Version:       version,
+			ChunkSize:     chunkSize,
+			EstimatedRows: estimatedRows,
 			Connection: &analyzer.ConnectionInfo{
 				Host:   connCfg.Host,
 				Port:   connCfg.Port,
