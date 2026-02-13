@@ -63,6 +63,11 @@ func (r *TextRenderer) RenderPlan(result *analyzer.Result) {
 	// Recommendation box
 	r.renderRecommendation(result, width)
 
+	// Execution command box (if generated)
+	if result.ExecutionCommand != "" {
+		r.renderExecutionCommand(result, width)
+	}
+
 	// Rollback box
 	r.renderRollback(result, width)
 
@@ -157,6 +162,14 @@ func (r *TextRenderer) renderRecommendation(result *analyzer.Result, width int) 
 	content := fmt.Sprintf("%s\n%s %s\n\n%s\n\nMethod: %s", title, icon, label, result.Recommendation, result.Method)
 	recBox := style.Width(width).Render(content)
 	fmt.Fprintln(r.w, recBox)
+}
+
+func (r *TextRenderer) renderExecutionCommand(result *analyzer.Result, width int) {
+	title := TitleStyle.Render("Execution Command")
+	note := MutedText.Render("Ready-to-run command (review and adjust as needed):")
+	content := fmt.Sprintf("%s\n%s\n\n%s", title, note, result.ExecutionCommand)
+	cmdBox := BoxStyle.Width(width).Render(content)
+	fmt.Fprintln(r.w, cmdBox)
 }
 
 func (r *TextRenderer) renderRollback(result *analyzer.Result, width int) {

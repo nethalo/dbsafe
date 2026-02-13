@@ -103,6 +103,12 @@ var planCmd = &cobra.Command{
 			Topo:      topo,
 			Version:   version,
 			ChunkSize: chunkSize,
+			Connection: &analyzer.ConnectionInfo{
+				Host:   connCfg.Host,
+				Port:   connCfg.Port,
+				User:   connCfg.User,
+				Socket: connCfg.Socket,
+			},
 		})
 
 		// Render output

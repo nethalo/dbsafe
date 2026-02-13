@@ -88,6 +88,13 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintf(r.w, "**Method:** %s\n\n", result.Method)
 	fmt.Fprintf(r.w, "%s\n\n", result.Recommendation)
 
+	// Execution command (if available)
+	if result.ExecutionCommand != "" {
+		fmt.Fprintf(r.w, "## 🚀 Execution Command\n\n")
+		fmt.Fprintf(r.w, "Ready-to-run command (review and adjust as needed):\n\n")
+		fmt.Fprintf(r.w, "```bash\n%s\n```\n\n", result.ExecutionCommand)
+	}
+
 	// Rollback
 	fmt.Fprintf(r.w, "## Rollback\n\n")
 	if result.RollbackSQL != "" {

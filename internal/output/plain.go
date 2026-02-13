@@ -64,6 +64,12 @@ func (r *PlainRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintf(r.w, "Method:        %s\n", result.Method)
 	fmt.Fprintf(r.w, "%s\n\n", result.Recommendation)
 
+	// Execution command (if available)
+	if result.ExecutionCommand != "" {
+		fmt.Fprintf(r.w, "--- Execution Command ---\n")
+		fmt.Fprintf(r.w, "%s\n\n", result.ExecutionCommand)
+	}
+
 	// Rollback
 	fmt.Fprintf(r.w, "--- Rollback ---\n")
 	if result.RollbackSQL != "" {

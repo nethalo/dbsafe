@@ -30,13 +30,22 @@ const (
 	ExecRSU        ExecutionMethod = "RSU" // Rolling Schema Upgrade (Galera)
 )
 
+// ConnectionInfo holds non-sensitive connection details for command generation.
+type ConnectionInfo struct {
+	Host   string
+	Port   int
+	User   string
+	Socket string
+}
+
 // Input holds everything the analyzer needs.
 type Input struct {
-	Parsed    *parser.ParsedSQL
-	Meta      *mysql.TableMetadata
-	Topo      *topology.Info
-	Version   mysql.ServerVersion
-	ChunkSize int
+	Parsed     *parser.ParsedSQL
+	Meta       *mysql.TableMetadata
+	Topo       *topology.Info
+	Version    mysql.ServerVersion
+	ChunkSize  int
+	Connection *ConnectionInfo // Optional: for generating executable commands
 }
 
 // Result holds the complete analysis output.
@@ -63,11 +72,12 @@ type Result struct {
 	WriteSetSize  int64 // estimated bytes for write-set
 
 	// Recommendation
-	Risk            RiskLevel
-	Method          ExecutionMethod
-	Recommendation  string
-	Warnings        []string
-	ClusterWarnings []string
+	Risk             RiskLevel
+	Method           ExecutionMethod
+	Recommendation   string
+	ExecutionCommand string   // Generated command for gh-ost or pt-osc
+	Warnings         []string
+	ClusterWarnings  []string
 
 	// Rollback
 	RollbackSQL     string
@@ -223,6 +233,13 @@ func analyzeDDL(input Input, result *Result) {
 			}
 			result.Method = ExecDirect
 		}
+	}
+
+	// Generate executable command for gh-ost or pt-osc
+	if result.Method == ExecGhost {
+		result.ExecutionCommand = generateGhostCommand(input)
+	} else if result.Method == ExecPtOSC {
+		result.ExecutionCommand = generatePtOSCCommand(input, input.Topo.Type == topology.Galera)
 	}
 
 	// Generate rollback SQL
@@ -598,4 +615,124 @@ func formatNumber(n int64) string {
 		return fmt.Sprintf("%.1fK", float64(n)/1_000)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// extractAlterSpec extracts the ALTER specification from a DDL statement.
+// For "ALTER TABLE users ADD COLUMN email VARCHAR(255)", returns "ADD COLUMN email VARCHAR(255)".
+func extractAlterSpec(sql string) string {
+	// Remove leading/trailing whitespace
+	sql = strings.TrimSpace(sql)
+
+	// Find "ALTER TABLE" (case-insensitive)
+	alterIdx := strings.Index(strings.ToUpper(sql), "ALTER TABLE")
+	if alterIdx == -1 {
+		return sql // Return original if not an ALTER TABLE
+	}
+
+	// Skip past "ALTER TABLE"
+	remaining := sql[alterIdx+11:] // len("ALTER TABLE") = 11
+	remaining = strings.TrimSpace(remaining)
+
+	// Find the table name (could be quoted or qualified)
+	// Simple approach: find the first space after skipping the table identifier
+	// This handles: tablename, `tablename`, db.table, `db`.`table`
+	inBacktick := false
+	tableEnd := 0
+	for i, ch := range remaining {
+		if ch == '`' {
+			inBacktick = !inBacktick
+		} else if !inBacktick && (ch == ' ' || ch == '\t' || ch == '\n') {
+			tableEnd = i
+			break
+		}
+	}
+
+	if tableEnd == 0 {
+		return "" // Couldn't find table name
+	}
+
+	// Return everything after the table name
+	alterSpec := strings.TrimSpace(remaining[tableEnd:])
+	return alterSpec
+}
+
+// generateGhostCommand generates a gh-ost command for the given DDL.
+func generateGhostCommand(input Input) string {
+	if input.Connection == nil {
+		return "" // Can't generate without connection info
+	}
+
+	alterSpec := extractAlterSpec(input.Parsed.RawSQL)
+	if alterSpec == "" {
+		return ""
+	}
+
+	var cmd strings.Builder
+	cmd.WriteString("gh-ost \\\n")
+	cmd.WriteString(fmt.Sprintf("  --user=\"%s\" \\\n", input.Connection.User))
+
+	if input.Connection.Socket != "" {
+		cmd.WriteString(fmt.Sprintf("  --socket=\"%s\" \\\n", input.Connection.Socket))
+	} else {
+		cmd.WriteString(fmt.Sprintf("  --host=\"%s\" \\\n", input.Connection.Host))
+		cmd.WriteString(fmt.Sprintf("  --port=%d \\\n", input.Connection.Port))
+	}
+
+	cmd.WriteString(fmt.Sprintf("  --database=\"%s\" \\\n", input.Parsed.Database))
+	cmd.WriteString(fmt.Sprintf("  --table=\"%s\" \\\n", input.Parsed.Table))
+	cmd.WriteString(fmt.Sprintf("  --alter=\"%s\" \\\n", alterSpec))
+	cmd.WriteString("  --assume-rbr \\\n")
+	cmd.WriteString("  --cut-over=default \\\n")
+	cmd.WriteString("  --exact-rowcount \\\n")
+	cmd.WriteString("  --concurrent-rowcount \\\n")
+	cmd.WriteString("  --default-retries=120 \\\n")
+	cmd.WriteString("  --panic-flag-file=/tmp/ghost.panic.flag \\\n")
+	cmd.WriteString("  --postpone-cut-over-flag-file=/tmp/ghost.postpone.flag \\\n")
+	cmd.WriteString("  --execute")
+
+	return cmd.String()
+}
+
+// generatePtOSCCommand generates a pt-online-schema-change command for the given DDL.
+func generatePtOSCCommand(input Input, isGalera bool) string {
+	if input.Connection == nil {
+		return "" // Can't generate without connection info
+	}
+
+	alterSpec := extractAlterSpec(input.Parsed.RawSQL)
+	if alterSpec == "" {
+		return ""
+	}
+
+	var cmd strings.Builder
+	cmd.WriteString("pt-online-schema-change \\\n")
+
+	// Build DSN
+	var dsn string
+	if input.Connection.Socket != "" {
+		dsn = fmt.Sprintf("S=%s", input.Connection.Socket)
+	} else {
+		dsn = fmt.Sprintf("h=%s,P=%d", input.Connection.Host, input.Connection.Port)
+	}
+	dsn += fmt.Sprintf(",u=%s", input.Connection.User)
+	dsn += fmt.Sprintf(",D=%s,t=%s", input.Parsed.Database, input.Parsed.Table)
+
+	cmd.WriteString(fmt.Sprintf("  %s \\\n", dsn))
+	cmd.WriteString(fmt.Sprintf("  --alter \"%s\" \\\n", alterSpec))
+	cmd.WriteString("  --execute \\\n")
+	cmd.WriteString("  --chunk-size=1000 \\\n")
+	cmd.WriteString("  --chunk-time=0.5 \\\n")
+	cmd.WriteString("  --max-load=Threads_running=25 \\\n")
+	cmd.WriteString("  --critical-load=Threads_running=50 \\\n")
+
+	// Galera-specific flags
+	if isGalera {
+		cmd.WriteString("  --max-flow-ctl=0.5 \\\n")
+		cmd.WriteString("  --check-plan \\\n")
+	}
+
+	cmd.WriteString("  --alter-foreign-keys-method=auto \\\n")
+	cmd.WriteString("  --preserve-triggers")
+
+	return cmd.String()
 }
