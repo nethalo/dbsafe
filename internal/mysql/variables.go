@@ -96,17 +96,33 @@ func ParseVersion(raw string) (ServerVersion, error) {
 	return v, nil
 }
 
-// GetVariable reads a single MySQL global variable.
+// GetVariable reads a single MySQL variable.
+// Returns the value, or empty string if variable doesn't exist.
+// Note: Some variables (like wsrep_on) require SHOW VARIABLES without GLOBAL.
 func GetVariable(db *sql.DB, name string) (string, error) {
-	var varName, value string
+	var varName, value sql.NullString
+
+	// Try with GLOBAL first (most variables)
 	err := db.QueryRow("SHOW GLOBAL VARIABLES LIKE ?", name).Scan(&varName, &value)
+	if err == nil && value.Valid && value.String != "" {
+		return value.String, nil
+	}
+
+	// If GLOBAL didn't work, try without GLOBAL (needed for some wsrep variables)
+	err = db.QueryRow("SHOW VARIABLES LIKE ?", name).Scan(&varName, &value)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", nil // variable doesn't exist (e.g., wsrep vars on non-Galera)
+			return "", nil // variable doesn't exist
 		}
-		return "", err
+		return "", fmt.Errorf("query failed: %w", err)
 	}
-	return value, nil
+
+	// Check if value is NULL
+	if !value.Valid {
+		return "", nil
+	}
+
+	return value.String, nil
 }
 
 // GetStatus reads a single MySQL global status variable.

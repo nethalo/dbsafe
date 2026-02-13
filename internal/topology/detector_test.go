@@ -93,20 +93,34 @@ func TestDetectGalera(t *testing.T) {
 			defer db.Close()
 
 			// Mock wsrep_on variable query
+			// Note: wsrep_on requires SHOW VARIABLES (not GLOBAL)
 			if tt.wsrepOnErr != nil {
+				// First GLOBAL attempt fails
 				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+					WithArgs("wsrep_on").
+					WillReturnError(sql.ErrNoRows)
+				// Then non-GLOBAL attempt also fails
+				mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 					WithArgs("wsrep_on").
 					WillReturnError(tt.wsrepOnErr)
 			} else {
 				if tt.wsrepOn != "" {
+					// GLOBAL returns no rows (wsrep_on not available via GLOBAL)
+					mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+						WithArgs("wsrep_on").
+						WillReturnError(sql.ErrNoRows)
+					// Fallback to SHOW VARIABLES returns value
 					rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 						AddRow("wsrep_on", tt.wsrepOn)
-					mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+					mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 						WithArgs("wsrep_on").
 						WillReturnRows(rows)
 				} else {
-					// Variable doesn't exist - return no rows
+					// Variable doesn't exist - both queries return no rows
 					mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+						WithArgs("wsrep_on").
+						WillReturnError(sql.ErrNoRows)
+					mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 						WithArgs("wsrep_on").
 						WillReturnError(sql.ErrNoRows)
 				}
@@ -122,7 +136,11 @@ func TestDetectGalera(t *testing.T) {
 
 					// Fallback to variable query
 					if tt.clusterVarErr != nil {
+						// Both GLOBAL and non-GLOBAL attempts
 						mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+							WithArgs("wsrep_cluster_size").
+							WillReturnError(sql.ErrNoRows)
+						mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 							WithArgs("wsrep_cluster_size").
 							WillReturnError(tt.clusterVarErr)
 					} else if tt.clusterSizeVar != "" {
@@ -132,8 +150,11 @@ func TestDetectGalera(t *testing.T) {
 							WithArgs("wsrep_cluster_size").
 							WillReturnRows(rows)
 					} else {
-						// Variable doesn't exist
+						// Variable doesn't exist - both queries fail
 						mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+							WithArgs("wsrep_cluster_size").
+							WillReturnError(sql.ErrNoRows)
+						mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 							WithArgs("wsrep_cluster_size").
 							WillReturnError(sql.ErrNoRows)
 					}
@@ -156,7 +177,11 @@ func TestDetectGalera(t *testing.T) {
 							WithArgs("wsrep_cluster_size").
 							WillReturnRows(rows)
 					} else {
+						// Both GLOBAL and non-GLOBAL queries return no rows
 						mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+							WithArgs("wsrep_cluster_size").
+							WillReturnError(sql.ErrNoRows)
+						mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 							WithArgs("wsrep_cluster_size").
 							WillReturnError(sql.ErrNoRows)
 					}
@@ -259,9 +284,13 @@ func TestDetect_PXCCluster(t *testing.T) {
 		WillReturnRows(superReadOnlyRows)
 
 	// Mock wsrep_on (Galera detection)
+	// wsrep_on requires SHOW VARIABLES (not GLOBAL)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
 	wsrepOnRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_on", "ON")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 		WithArgs("wsrep_on").
 		WillReturnRows(wsrepOnRows)
 
@@ -331,10 +360,21 @@ func TestDetect_VerboseLogging(t *testing.T) {
 	}
 	defer db.Close()
 
+	// Mock version_comment query (new debug query)
+	versionCommentRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
+		AddRow("version_comment", "Percona XtraDB Cluster (GPL), Release rel34, Revision 0682ba7, WSREP version 26.1.4.3")
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("version_comment").
+		WillReturnRows(versionCommentRows)
+
 	// Mock wsrep_on query
+	// wsrep_on requires SHOW VARIABLES (not GLOBAL)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
 	wsrepOnRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_on", "ON")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 		WithArgs("wsrep_on").
 		WillReturnRows(wsrepOnRows)
 
@@ -379,6 +419,10 @@ func TestDetect_VerboseLogging(t *testing.T) {
 		t.Errorf("expected verbose debug output, but got none. Output: %s", logOutput)
 	}
 
+	if !strings.Contains(logOutput, "version_comment") {
+		t.Errorf("expected debug output to mention version_comment, but it doesn't. Output: %s", logOutput)
+	}
+
 	if !strings.Contains(logOutput, "wsrep_on") {
 		t.Errorf("expected debug output to mention wsrep_on, but it doesn't. Output: %s", logOutput)
 	}
@@ -389,6 +433,82 @@ func TestDetect_VerboseLogging(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// TestGetVariable_ActualQuery tests GetVariable with real query to ensure proper scanning
+func TestGetVariable_ActualQuery(t *testing.T) {
+	tests := []struct {
+		name          string
+		varName       string
+		mockValue     string
+		expectedValue string
+		globalWorks   bool // true if SHOW GLOBAL VARIABLES returns value
+	}{
+		{
+			name:          "wsrep_on from SHOW VARIABLES (not GLOBAL)",
+			varName:       "wsrep_on",
+			mockValue:     "ON",
+			expectedValue: "ON",
+			globalWorks:   false, // wsrep_on requires non-GLOBAL query
+		},
+		{
+			name:          "version_comment from GLOBAL",
+			varName:       "version_comment",
+			mockValue:     "Percona XtraDB Cluster (GPL), Release rel34",
+			expectedValue: "Percona XtraDB Cluster (GPL), Release rel34",
+			globalWorks:   true,
+		},
+		{
+			name:          "numeric value from GLOBAL",
+			varName:       "max_connections",
+			mockValue:     "151",
+			expectedValue: "151",
+			globalWorks:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("failed to create mock: %v", err)
+			}
+			defer db.Close()
+
+			if tt.globalWorks {
+				// SHOW GLOBAL VARIABLES returns the value
+				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
+					AddRow(tt.varName, tt.mockValue)
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+					WithArgs(tt.varName).
+					WillReturnRows(rows)
+			} else {
+				// SHOW GLOBAL VARIABLES returns no rows, fallback to SHOW VARIABLES
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+					WithArgs(tt.varName).
+					WillReturnError(sql.ErrNoRows)
+
+				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
+					AddRow(tt.varName, tt.mockValue)
+				mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+					WithArgs(tt.varName).
+					WillReturnRows(rows)
+			}
+
+			value, err := mysql.GetVariable(db, tt.varName)
+			if err != nil {
+				t.Fatalf("GetVariable returned error: %v", err)
+			}
+
+			if value != tt.expectedValue {
+				t.Errorf("expected value %q, got %q", tt.expectedValue, value)
+			}
+
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("unfulfilled expectations: %v", err)
+			}
+		})
 	}
 }
 
@@ -421,6 +541,9 @@ func TestDetect_Standalone(t *testing.T) {
 
 	// Mock wsrep_on - doesn't exist on standalone
 	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
 		WithArgs("wsrep_on").
 		WillReturnError(sql.ErrNoRows)
 

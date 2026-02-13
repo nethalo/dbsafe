@@ -100,10 +100,17 @@ func Detect(db *sql.DB, verbose bool) (*Info, error) {
 }
 
 func detectGalera(db *sql.DB, info *Info, verbose bool) (bool, error) {
+	// First, check if this is PXC by looking at version_comment
+	versionComment, _ := mysql.GetVariable(db, "version_comment")
+	if verbose {
+		log.Printf("[DEBUG] version_comment: %q", versionComment)
+	}
+
 	// Check if wsrep is enabled
 	wsrepOn, err := mysql.GetVariable(db, "wsrep_on")
 	if verbose {
 		log.Printf("[DEBUG] GetVariable('wsrep_on') returned: value=%q, err=%v", wsrepOn, err)
+		log.Printf("[DEBUG] wsrepOn length: %d, wsrepOn bytes: %v", len(wsrepOn), []byte(wsrepOn))
 	}
 	if err != nil {
 		// Actual error (not just variable doesn't exist)
