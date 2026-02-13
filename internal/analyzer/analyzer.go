@@ -168,7 +168,10 @@ func analyzeDDL(input Input, result *Result) {
 			}
 			result.Method = ExecDirect
 		} else {
-			// INPLACE with lock
+			// INPLACE with lock (SHARED or EXCLUSIVE)
+			// Both pt-osc and gh-ost can handle this, so we set pt-osc as method
+			// but recommend both as options. The Galera override (if applicable)
+			// will enforce pt-osc later in applyTopologyWarnings().
 			if input.Meta.TotalSize() > 1*1024*1024*1024 { // > 1 GB
 				if result.Risk != RiskDangerous {
 					result.Risk = RiskDangerous
@@ -191,7 +194,17 @@ func analyzeDDL(input Input, result *Result) {
 			if result.Risk != RiskDangerous {
 				result.Risk = RiskDangerous
 			}
-			// Galera: can't use gh-ost
+			// gh-ost vs pt-online-schema-change decision:
+			//
+			// gh-ost is preferred for non-Galera topologies because:
+			// - No triggers: Uses binlog streaming instead of triggers, avoiding overhead on production table
+			// - Pausable/resumable: Can pause and resume without starting over
+			// - Better throttling: Sub-second lag detection, more granular control
+			// - Testable cutover: Can test the table swap before actually doing it
+			//
+			// However, gh-ost is incompatible with Galera/PXC because it relies on binlog
+			// streaming which conflicts with Galera's writeset replication. In Galera clusters,
+			// we must use pt-online-schema-change (which uses triggers that replicate correctly).
 			if input.Topo.Type == topology.Galera {
 				result.Method = ExecPtOSC
 				if result.Recommendation == "" {
