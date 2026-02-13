@@ -116,4 +116,6 @@ dbsafe auto-detects your MySQL topology and adjusts recommendations:
 
 ## License
 
-[License TBD]
+Apache 2.0 - see [LICENSE](LICENSE) file for details.
+
+Free for commercial and personal use with attribution.
