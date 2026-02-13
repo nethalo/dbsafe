@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 160">
+  <defs>
+    <!-- Chalk texture pattern - diagonal lines -->
+    <pattern id="chalkTexture" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(0,0,0,0.4)" stroke-width="2"/>
+    </pattern>
+    
+    <!-- Mask for chalk effect -->
+    <mask id="chalkMask">
+      <rect width="100%" height="100%" fill="white"/>
+      <rect width="100%" height="100%" fill="url(#chalkTexture)"/>
+    </mask>
+
+    <!-- Individual letter colors (pastel chalk palette) -->
+    <linearGradient id="colorD" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F0A0A0"/>
+      <stop offset="100%" style="stop-color:#E88888"/>
+    </linearGradient>
+    <linearGradient id="colorB" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#98E4B0"/>
+      <stop offset="100%" style="stop-color:#80D498"/>
+    </linearGradient>
+    <linearGradient id="colorS" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F0DC82"/>
+      <stop offset="100%" style="stop-color:#E8D070"/>
+    </linearGradient>
+    <linearGradient id="colorA" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#B8A0D8"/>
+      <stop offset="100%" style="stop-color:#A890C8"/>
+    </linearGradient>
+    <linearGradient id="colorF" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#88C8F0"/>
+      <stop offset="100%" style="stop-color:#70B8E8"/>
+    </linearGradient>
+    <linearGradient id="colorE" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E0A8D0"/>
+      <stop offset="100%" style="stop-color:#D090C0"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Dark background -->
+  <rect width="440" height="160" fill="#1a1a2e"/>
+  
+  <!-- Letters with chalk texture -->
+  <g mask="url(#chalkMask)" font-family="'Arial Black', 'Helvetica Neue', sans-serif" font-size="80" font-weight="900">
+    <text x="28" y="100" fill="url(#colorD)">d</text>
+    <text x="88" y="100" fill="url(#colorB)">b</text>
+    <text x="152" y="100" fill="url(#colorS)">s</text>
+    <text x="205" y="100" fill="url(#colorA)">a</text>
+    <text x="262" y="100" fill="url(#colorF)">f</text>
+    <text x="295" y="100" fill="url(#colorE)">e</text>
+  </g>
+  
+  <!-- Chalk underline bar -->
+  <rect x="28" y="115" width="320" height="18" rx="2" fill="#60C8C8" mask="url(#chalkMask)"/>
+</svg>
