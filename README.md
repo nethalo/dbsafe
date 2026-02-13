@@ -45,23 +45,28 @@
 
 ### Download Pre-built Binary (Recommended)
 
-Grab the latest binary for your platform from [**Releases**](https://github.com/nethalo/dbsafe/releases):
+**Option 1: Download from [Releases page](https://github.com/nethalo/dbsafe/releases/latest)** (easiest)
+
+**Option 2: Using curl** (replace `VERSION` with latest release, e.g., `0.1.2`):
 
 ```bash
+# Set version
+VERSION=0.1.2
+
 # macOS (Apple Silicon)
-curl -L https://github.com/nethalo/dbsafe/releases/latest/download/dbsafe_Darwin_arm64.tar.gz | tar xz
+curl -L https://github.com/nethalo/dbsafe/releases/download/v${VERSION}/dbsafe_${VERSION}_darwin_arm64.tar.gz | tar xz
 sudo mv dbsafe /usr/local/bin/
 
 # macOS (Intel)
-curl -L https://github.com/nethalo/dbsafe/releases/latest/download/dbsafe_Darwin_x86_64.tar.gz | tar xz
+curl -L https://github.com/nethalo/dbsafe/releases/download/v${VERSION}/dbsafe_${VERSION}_darwin_amd64.tar.gz | tar xz
 sudo mv dbsafe /usr/local/bin/
 
 # Linux (x86_64)
-curl -L https://github.com/nethalo/dbsafe/releases/latest/download/dbsafe_Linux_x86_64.tar.gz | tar xz
+curl -L https://github.com/nethalo/dbsafe/releases/download/v${VERSION}/dbsafe_${VERSION}_linux_amd64.tar.gz | tar xz
 sudo mv dbsafe /usr/local/bin/
 
 # Linux (ARM64)
-curl -L https://github.com/nethalo/dbsafe/releases/latest/download/dbsafe_Linux_arm64.tar.gz | tar xz
+curl -L https://github.com/nethalo/dbsafe/releases/download/v${VERSION}/dbsafe_${VERSION}_linux_arm64.tar.gz | tar xz
 sudo mv dbsafe /usr/local/bin/
 ```
 
