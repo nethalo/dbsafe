@@ -79,7 +79,8 @@ var planCmd = &cobra.Command{
 		defer conn.Close()
 
 		// Detect topology
-		topo, err := topology.Detect(conn)
+		verbose := viper.GetBool("verbose")
+		topo, err := topology.Detect(conn, verbose)
 		if err != nil {
 			return fmt.Errorf("topology detection failed: %w", err)
 		}

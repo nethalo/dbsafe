@@ -4,23 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 
 	"github.com/nethalo/dbsafe/internal/mysql"
 )
-
-var verbose bool
-
-func init() {
-	// Check if verbose flag is set
-	for _, arg := range os.Args {
-		if arg == "-v" || arg == "--verbose" {
-			verbose = true
-			break
-		}
-	}
-}
 
 // Type represents the detected MySQL topology.
 type Type string
@@ -63,7 +50,8 @@ type Info struct {
 }
 
 // Detect connects to MySQL and determines the topology.
-func Detect(db *sql.DB) (*Info, error) {
+// Set verbose to true to enable debug logging.
+func Detect(db *sql.DB, verbose bool) (*Info, error) {
 	info := &Info{}
 
 	// Get version first
@@ -80,7 +68,7 @@ func Detect(db *sql.DB) (*Info, error) {
 	info.SuperReadOnly = sro == "ON"
 
 	// Try Galera detection first (most specific)
-	detected, err := detectGalera(db, info)
+	detected, err := detectGalera(db, info, verbose)
 	if err != nil {
 		return nil, fmt.Errorf("galera detection failed: %w", err)
 	}
@@ -111,7 +99,7 @@ func Detect(db *sql.DB) (*Info, error) {
 	return info, nil
 }
 
-func detectGalera(db *sql.DB, info *Info) (bool, error) {
+func detectGalera(db *sql.DB, info *Info, verbose bool) (bool, error) {
 	// Check if wsrep is enabled
 	wsrepOn, err := mysql.GetVariable(db, "wsrep_on")
 	if verbose {

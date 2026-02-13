@@ -3,6 +3,9 @@ package topology
 import (
 	"database/sql"
 	"fmt"
+	"log"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -195,7 +198,7 @@ func TestDetectGalera(t *testing.T) {
 				Version: mysql.ServerVersion{Major: 8, Minor: 0, Patch: 43},
 			}
 
-			detected, err := detectGalera(db, info)
+			detected, err := detectGalera(db, info, false)
 
 			if tt.expectedError {
 				if err == nil {
@@ -294,7 +297,7 @@ func TestDetect_PXCCluster(t *testing.T) {
 		WithArgs("wsrep_flow_control_paused").
 		WillReturnRows(fcRows)
 
-	info, err := Detect(db)
+	info, err := Detect(db, false)
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
 	}
@@ -309,6 +312,79 @@ func TestDetect_PXCCluster(t *testing.T) {
 
 	if info.Version.Flavor != "percona-xtradb-cluster" {
 		t.Errorf("expected Flavor=percona-xtradb-cluster, got %s", info.Version.Flavor)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_VerboseLogging(t *testing.T) {
+	// Capture log output
+	var logBuf strings.Builder
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock wsrep_on query
+	wsrepOnRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
+		AddRow("wsrep_on", "ON")
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnRows(wsrepOnRows)
+
+	// Mock wsrep_cluster_size status
+	clusterSizeRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
+		AddRow("wsrep_cluster_size", "3")
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE ?").
+		WithArgs("wsrep_cluster_size").
+		WillReturnRows(clusterSizeRows)
+
+	// Mock additional Galera info
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE ?").
+		WithArgs("wsrep_local_state_comment").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("wsrep_local_state_comment", "Synced"))
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_OSU_method").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("wsrep_OSU_method", "TOI"))
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_max_ws_size").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("wsrep_max_ws_size", "2147483647"))
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE ?").
+		WithArgs("wsrep_flow_control_paused").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("wsrep_flow_control_paused", "0.0"))
+
+	info := &Info{
+		Version: mysql.ServerVersion{Major: 8, Minor: 0, Patch: 43},
+	}
+
+	// Call with verbose=true
+	detected, err := detectGalera(db, info, true)
+	if err != nil {
+		t.Fatalf("detectGalera returned error: %v", err)
+	}
+
+	if !detected {
+		t.Errorf("expected detected=true, got false")
+	}
+
+	// Verify debug output was generated
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "[DEBUG]") {
+		t.Errorf("expected verbose debug output, but got none. Output: %s", logOutput)
+	}
+
+	if !strings.Contains(logOutput, "wsrep_on") {
+		t.Errorf("expected debug output to mention wsrep_on, but it doesn't. Output: %s", logOutput)
+	}
+
+	if !strings.Contains(logOutput, "Galera/PXC detected") {
+		t.Errorf("expected debug output to mention Galera detection, but it doesn't. Output: %s", logOutput)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -365,7 +441,7 @@ func TestDetect_Standalone(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM information_schema\\.PROCESSLIST").
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
 
-	info, err := Detect(db)
+	info, err := Detect(db, false)
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
 	}
