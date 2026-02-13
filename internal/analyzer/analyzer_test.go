@@ -939,6 +939,30 @@ func TestColumnValidation_ChangeColumn_SameNameAllowed(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDDL_UnparsableOperation(t *testing.T) {
+	// Test that OtherDDL operations generate a syntax warning
+	input := ddlInput(parser.OtherDDL, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 100*1024*1024, topology.Standalone)
+	input.Parsed.DDLOp = parser.OtherDDL
+	input.Parsed.RawSQL = "ALTER TABLE users ADD COLUMN email VRCHAR(255)" // Typo: VRCHAR
+
+	result := Analyze(input)
+
+	// Should generate warning about unparsable operation
+	if !containsWarning(result.Warnings, "could not be fully parsed") {
+		t.Errorf("Expected warning about unparsable operation, got warnings: %v", result.Warnings)
+	}
+
+	// Should be marked as DANGEROUS
+	if result.Risk != RiskDangerous {
+		t.Errorf("Expected RiskDangerous for unparsable operation, got: %s", result.Risk)
+	}
+
+	// Should use default classification (COPY)
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("Expected COPY algorithm for unknown operation, got: %s", result.Classification.Algorithm)
+	}
+}
+
 // =============================================================
 
 func containsWarning(warnings []string, substr string) bool {

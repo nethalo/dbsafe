@@ -384,6 +384,23 @@ func TestParse_InvalidSQL(t *testing.T) {
 	}
 }
 
+func TestParse_InvalidDataType(t *testing.T) {
+	// Test with typo: VRCHAR instead of VARCHAR
+	sql := "ALTER TABLE users ADD COLUMN email VRCHAR(255) NOT NULL DEFAULT ''"
+	result, err := Parse(sql)
+
+	// Log what we get
+	if err != nil {
+		t.Logf("Parse returned error: %v", err)
+	} else {
+		t.Logf("Parse succeeded:")
+		t.Logf("  Type: %s", result.Type)
+		t.Logf("  DDLOp: %s", result.DDLOp)
+		t.Logf("  ColumnName: %s", result.ColumnName)
+		t.Logf("  ColumnDef: %s", result.ColumnDef)
+	}
+}
+
 func TestParse_TrailingSemicolon(t *testing.T) {
 	result, err := Parse("ALTER TABLE users ADD COLUMN email VARCHAR(255);")
 	if err != nil {

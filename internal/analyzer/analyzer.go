@@ -122,6 +122,15 @@ func Analyze(input Input) *Result {
 func analyzeDDL(input Input, result *Result) {
 	result.DDLOp = input.Parsed.DDLOp
 
+	// Warn if operation couldn't be fully parsed
+	if input.Parsed.DDLOp == parser.OtherDDL {
+		result.Warnings = append(result.Warnings,
+			"⚠️  DDL operation could not be fully parsed. This may indicate a syntax error or unsupported operation.",
+			"Please verify the SQL syntax manually before execution.",
+		)
+		result.Risk = RiskDangerous
+	}
+
 	// Validate column existence before proceeding
 	validateColumnOperation(input, result)
 
