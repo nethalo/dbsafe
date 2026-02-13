@@ -108,13 +108,17 @@ var configInitCmd = &cobra.Command{
 		}
 
 		fmt.Printf("\n✅ Config written to %s\n", configPath)
-		fmt.Println("\nRecommended: create a read-only MySQL user for dbsafe:")
-		fmt.Println()
-		fmt.Printf("  CREATE USER '%s'@'%%' IDENTIFIED BY '<password>';\n", user)
-		fmt.Printf("  GRANT SELECT ON *.* TO '%s'@'%%';\n", user)
-		fmt.Printf("  GRANT PROCESS ON *.* TO '%s'@'%%';\n", user)
-		fmt.Printf("  GRANT REPLICATION CLIENT ON *.* TO '%s'@'%%';\n", user)
-		fmt.Println()
+
+		// Don't recommend creating root user
+		if user != "root" {
+			fmt.Println("\nRecommended: create a read-only MySQL user for dbsafe:")
+			fmt.Println()
+			fmt.Printf("  CREATE USER '%s'@'%%' IDENTIFIED BY '<password>';\n", user)
+			fmt.Printf("  GRANT SELECT ON *.* TO '%s'@'%%';\n", user)
+			fmt.Printf("  GRANT PROCESS ON *.* TO '%s'@'%%';\n", user)
+			fmt.Printf("  GRANT REPLICATION CLIENT ON *.* TO '%s'@'%%';\n", user)
+			fmt.Println()
+		}
 
 		return nil
 	},
