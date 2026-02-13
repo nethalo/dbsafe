@@ -3,10 +3,24 @@ package topology
 import (
 	"database/sql"
 	"fmt"
+	"log"
+	"os"
 	"strconv"
 
 	"github.com/nethalo/dbsafe/internal/mysql"
 )
+
+var verbose bool
+
+func init() {
+	// Check if verbose flag is set
+	for _, arg := range os.Args {
+		if arg == "-v" || arg == "--verbose" {
+			verbose = true
+			break
+		}
+	}
+}
 
 // Type represents the detected MySQL topology.
 type Type string
@@ -100,23 +114,38 @@ func Detect(db *sql.DB) (*Info, error) {
 func detectGalera(db *sql.DB, info *Info) (bool, error) {
 	// Check if wsrep is enabled
 	wsrepOn, err := mysql.GetVariable(db, "wsrep_on")
+	if verbose {
+		log.Printf("[DEBUG] GetVariable('wsrep_on') returned: value=%q, err=%v", wsrepOn, err)
+	}
 	if err != nil {
 		// Actual error (not just variable doesn't exist)
 		return false, fmt.Errorf("failed to get wsrep_on: %w", err)
 	}
 	if wsrepOn != "ON" {
+		if verbose {
+			log.Printf("[DEBUG] wsrep_on is not 'ON' (got %q), not a Galera cluster", wsrepOn)
+		}
 		return false, nil
 	}
 
 	// Check cluster size from status (more reliable than variable)
 	clusterSize, err := mysql.GetStatus(db, "wsrep_cluster_size")
+	if verbose {
+		log.Printf("[DEBUG] GetStatus('wsrep_cluster_size') returned: value=%q, err=%v", clusterSize, err)
+	}
 	if err != nil || clusterSize == "" {
 		// Status variable doesn't exist or is empty, fallback to variable
 		clusterSize, err = mysql.GetVariable(db, "wsrep_cluster_size")
+		if verbose {
+			log.Printf("[DEBUG] Fallback GetVariable('wsrep_cluster_size') returned: value=%q, err=%v", clusterSize, err)
+		}
 		if err != nil {
 			return false, fmt.Errorf("failed to get wsrep_cluster_size: %w", err)
 		}
 		if clusterSize == "" {
+			if verbose {
+				log.Printf("[DEBUG] wsrep_cluster_size is empty, not a Galera cluster")
+			}
 			return false, nil
 		}
 	}
@@ -126,7 +155,14 @@ func detectGalera(db *sql.DB, info *Info) (bool, error) {
 		return false, fmt.Errorf("invalid wsrep_cluster_size value '%s': %w", clusterSize, err)
 	}
 	if size == 0 {
+		if verbose {
+			log.Printf("[DEBUG] wsrep_cluster_size is 0, not a Galera cluster")
+		}
 		return false, nil
+	}
+
+	if verbose {
+		log.Printf("[DEBUG] Galera/PXC detected! Cluster size: %d", size)
 	}
 
 	info.Type = Galera
