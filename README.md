@@ -1,8 +1,6 @@
 <h1 align="center">
 	<br>
-	<img src="assets/dbsafe-logo-v4.svg" alt="dbsafe" width="200">
-	<br>
-	dbsafe
+	<img src="assets/dbsafe-logo-v4.svg" alt="dbsafe" width="400">
 	<br>
 </h1>
 
