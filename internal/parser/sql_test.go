@@ -331,6 +331,11 @@ func TestParse_Insert(t *testing.T) {
 			table:    "users",
 			database: "mydb",
 		},
+		{
+			name:  "insert select",
+			sql:   "INSERT INTO users SELECT * FROM old_users",
+			table: "users",
+		},
 	}
 
 	for _, tt := range tests {
@@ -344,6 +349,90 @@ func TestParse_Insert(t *testing.T) {
 			}
 			if result.DMLOp != Insert {
 				t.Errorf("DMLOp = %q, want %q", result.DMLOp, Insert)
+			}
+			if result.Table != tt.table {
+				t.Errorf("Table = %q, want %q", result.Table, tt.table)
+			}
+			if result.Database != tt.database {
+				t.Errorf("Database = %q, want %q", result.Database, tt.database)
+			}
+		})
+	}
+}
+
+func TestParse_LoadData(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "simple load data",
+			sql:  "LOAD DATA INFILE '/tmp/data.csv' INTO TABLE users",
+		},
+		{
+			name: "load data local",
+			sql:  "LOAD DATA LOCAL INFILE '/tmp/data.csv' INTO TABLE mydb.orders",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Parse(tt.sql)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.Type != DML {
+				t.Errorf("Type = %q, want DML", result.Type)
+			}
+			if result.DMLOp != LoadData {
+				t.Errorf("DMLOp = %q, want %q", result.DMLOp, LoadData)
+			}
+			// Note: Vitess doesn't parse LOAD DATA details, so table name won't be extracted
+		})
+	}
+}
+
+func TestParse_CreateTable(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		table    string
+		database string
+	}{
+		{
+			name:  "simple create table",
+			sql:   "CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(100))",
+			table: "users",
+		},
+		{
+			name:  "create table as select",
+			sql:   "CREATE TABLE new_users AS SELECT * FROM old_users",
+			table: "new_users",
+		},
+		{
+			name:  "create table select (without AS)",
+			sql:   "CREATE TABLE new_users SELECT * FROM old_users",
+			table: "new_users",
+		},
+		{
+			name:     "create table with qualified name",
+			sql:      "CREATE TABLE mydb.users (id INT)",
+			table:    "users",
+			database: "mydb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Parse(tt.sql)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.Type != DDL {
+				t.Errorf("Type = %q, want DDL", result.Type)
+			}
+			if result.DDLOp != CreateTable {
+				t.Errorf("DDLOp = %q, want %q", result.DDLOp, CreateTable)
 			}
 			if result.Table != tt.table {
 				t.Errorf("Table = %q, want %q", result.Table, tt.table)

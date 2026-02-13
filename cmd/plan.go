@@ -39,6 +39,22 @@ var planCmd = &cobra.Command{
 			return fmt.Errorf("SQL parse error: %w", err)
 		}
 
+		// Check if this is an unsupported operation (INSERT/LOAD DATA/CREATE TABLE)
+		if (parsed.Type == parser.DML && (parsed.DMLOp == parser.Insert || parsed.DMLOp == parser.LoadData)) ||
+			(parsed.Type == parser.DDL && parsed.DDLOp == parser.CreateTable) {
+			operationName := "INSERT"
+			if parsed.DMLOp == parser.LoadData {
+				operationName = "LOAD DATA INFILE"
+			} else if parsed.DDLOp == parser.CreateTable {
+				operationName = "CREATE TABLE"
+			}
+			fmt.Fprintf(os.Stderr, "\n⚠️  dbsafe doesn't analyze %s statements\n\n", operationName)
+			fmt.Fprintf(os.Stderr, "This tool is designed to analyze the \"UD\" in CRUD (UPDATE and DELETE),\n")
+			fmt.Fprintf(os.Stderr, "as well as DDL modifications like ALTER TABLE.\n\n")
+			fmt.Fprintf(os.Stderr, "For %s operations, dbsafe has nothing to report. 🤷\n\n", operationName)
+			return nil
+		}
+
 		// Build connection config
 		connCfg := mysql.ConnectionConfig{
 			Host:     viper.GetString("host"),

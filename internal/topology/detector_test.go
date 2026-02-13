@@ -577,3 +577,488 @@ func TestDetect_Standalone(t *testing.T) {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
+
+func TestDetect_GroupReplication_SinglePrimary(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION()
+	versionRows := sqlmock.NewRows([]string{"VERSION()"}).
+		AddRow("8.0.35")
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(versionRows)
+
+	// Mock read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("super_read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
+
+	// Mock wsrep_on - not Galera
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock Group Replication detection
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_group_name").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("group_replication_group_name", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
+
+	// Mock single primary mode
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_single_primary_mode").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("group_replication_single_primary_mode", "ON"))
+
+	// Mock transaction size limit
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_transaction_size_limit").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("group_replication_transaction_size_limit", "150000000"))
+
+	// Mock member role query
+	memberRows := sqlmock.NewRows([]string{"MEMBER_ROLE", "MEMBER_STATE"}).
+		AddRow("SECONDARY", "ONLINE")
+	mock.ExpectQuery("SELECT MEMBER_ROLE, MEMBER_STATE FROM performance_schema.replication_group_members").
+		WillReturnRows(memberRows)
+
+	// Mock member count query
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM performance_schema.replication_group_members").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(3))
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != GroupRepl {
+		t.Errorf("expected Type=GroupRepl, got %s", info.Type)
+	}
+	if info.GRMode != "SINGLE-PRIMARY" {
+		t.Errorf("expected GRMode=SINGLE-PRIMARY, got %s", info.GRMode)
+	}
+	if info.GRMemberRole != "SECONDARY" {
+		t.Errorf("expected GRMemberRole=SECONDARY, got %s", info.GRMemberRole)
+	}
+	if info.GRMemberCount != 3 {
+		t.Errorf("expected GRMemberCount=3, got %d", info.GRMemberCount)
+	}
+	if info.GRTransactionLimit != 150000000 {
+		t.Errorf("expected GRTransactionLimit=150000000, got %d", info.GRTransactionLimit)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_GroupReplication_MultiPrimary(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION()
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
+
+	// Mock read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("super_read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
+
+	// Mock wsrep_on - not Galera
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock Group Replication - multi-primary
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_group_name").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("group_replication_group_name", "test-group"))
+
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_single_primary_mode").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("group_replication_single_primary_mode", "OFF"))
+
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_transaction_size_limit").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("group_replication_transaction_size_limit", "150000000"))
+
+	// Mock member role - PRIMARY in multi-primary
+	mock.ExpectQuery("SELECT MEMBER_ROLE, MEMBER_STATE FROM performance_schema.replication_group_members").
+		WillReturnRows(sqlmock.NewRows([]string{"MEMBER_ROLE", "MEMBER_STATE"}).
+			AddRow("PRIMARY", "ONLINE"))
+
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM performance_schema.replication_group_members").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(5))
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != GroupRepl {
+		t.Errorf("expected Type=GroupRepl, got %s", info.Type)
+	}
+	if info.GRMode != "MULTI-PRIMARY" {
+		t.Errorf("expected GRMode=MULTI-PRIMARY, got %s", info.GRMode)
+	}
+	if info.GRMemberRole != "PRIMARY" {
+		t.Errorf("expected GRMemberRole=PRIMARY, got %s", info.GRMemberRole)
+	}
+	if info.GRMemberCount != 5 {
+		t.Errorf("expected GRMemberCount=5, got %d", info.GRMemberCount)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_AsyncReplication_Replica(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION()
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
+
+	// Mock read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("super_read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
+
+	// Mock wsrep_on - not Galera
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock group_replication_group_name - not Group Replication
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_group_name").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock SHOW REPLICA STATUS - is a replica
+	replicaRows := sqlmock.NewRows([]string{
+		"Replica_IO_State", "Source_Host", "Source_User", "Source_Port",
+		"Connect_Retry", "Source_Log_File", "Read_Source_Log_Pos",
+		"Relay_Log_File", "Relay_Log_Pos", "Relay_Source_Log_File",
+		"Replica_IO_Running", "Replica_SQL_Running", "Seconds_Behind_Source",
+	}).AddRow(
+		"Waiting for source to send event", "primary.example.com", "repl", 3306,
+		60, "mysql-bin.000001", 12345,
+		"relay-bin.000001", 6789, "mysql-bin.000001",
+		"Yes", "Yes", "5",
+	)
+	mock.ExpectQuery("SHOW REPLICA STATUS").
+		WillReturnRows(replicaRows)
+
+	// Mock processlist check (no binlog dump threads)
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM information_schema.PROCESSLIST").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+	// Mock semi-sync check
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_source_enabled").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_source_enabled").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_master_enabled").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_master_enabled").
+		WillReturnError(sql.ErrNoRows)
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != AsyncReplica {
+		t.Errorf("expected Type=AsyncReplica, got %s", info.Type)
+	}
+	if !info.IsReplica {
+		t.Error("expected IsReplica=true")
+	}
+	if info.IsPrimary {
+		t.Error("expected IsPrimary=false")
+	}
+	if info.ReplicaLagSecs == nil {
+		t.Error("expected ReplicaLagSecs to be set")
+	} else if *info.ReplicaLagSecs != 5 {
+		t.Errorf("expected ReplicaLagSecs=5, got %d", *info.ReplicaLagSecs)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_AsyncReplication_Primary(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION()
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
+
+	// Mock read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("super_read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
+
+	// Mock wsrep_on - not Galera
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock group_replication_group_name - not GR
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_group_name").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock SHOW REPLICA STATUS - not a replica (returns no rows)
+	mock.ExpectQuery("SHOW REPLICA STATUS").
+		WillReturnError(fmt.Errorf("not a replica"))
+
+	// Mock SHOW SLAVE STATUS fallback - also not a replica
+	mock.ExpectQuery("SHOW SLAVE STATUS").
+		WillReturnError(fmt.Errorf("not a replica"))
+
+	// Mock processlist check - has binlog dump threads (is a primary)
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM information_schema.PROCESSLIST").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(2))
+
+	// Mock semi-sync check - not enabled
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_source_enabled").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_source_enabled").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_master_enabled").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_master_enabled").
+		WillReturnError(sql.ErrNoRows)
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != AsyncReplica {
+		t.Errorf("expected Type=AsyncReplica, got %s", info.Type)
+	}
+	if info.IsReplica {
+		t.Error("expected IsReplica=false")
+	}
+	if !info.IsPrimary {
+		t.Error("expected IsPrimary=true")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_SemiSyncReplication(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION()
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
+
+	// Mock read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("super_read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
+
+	// Mock wsrep_on - not Galera
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock group_replication - not GR
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_group_name").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock SHOW REPLICA STATUS - is a replica (MySQL 8.0.22+)
+	replicaRows := sqlmock.NewRows([]string{
+		"Replica_IO_Running", "Replica_SQL_Running", "Seconds_Behind_Source",
+	}).AddRow("Yes", "Yes", "0")
+	mock.ExpectQuery("SHOW REPLICA STATUS").
+		WillReturnRows(replicaRows)
+
+	// Mock processlist
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM information_schema.PROCESSLIST").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+	// Mock semi-sync - source enabled
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_source_enabled").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("rpl_semi_sync_source_enabled", "ON"))
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != SemiSyncReplica {
+		t.Errorf("expected Type=SemiSyncReplica, got %s", info.Type)
+	}
+	if !info.IsReplica {
+		t.Error("expected IsReplica=true")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_SemiSync_OldSyntax(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION()
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("5.7.40"))
+
+	// Mock read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("super_read_only").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
+
+	// Mock wsrep_on - not Galera
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("wsrep_on").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock group_replication - not GR
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("group_replication_group_name").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock SHOW REPLICA STATUS - not supported in MySQL 5.7
+	mock.ExpectQuery("SHOW REPLICA STATUS").
+		WillReturnError(fmt.Errorf("unknown command"))
+
+	// Mock SHOW SLAVE STATUS fallback - is a replica
+	slaveRows := sqlmock.NewRows([]string{
+		"Slave_IO_Running", "Slave_SQL_Running", "Seconds_Behind_Master",
+	}).AddRow("Yes", "Yes", "2")
+	mock.ExpectQuery("SHOW SLAVE STATUS").
+		WillReturnRows(slaveRows)
+
+	// Mock processlist
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM information_schema.PROCESSLIST").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+	// Mock semi-sync - source not available, use master
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_source_enabled").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_source_enabled").
+		WillReturnError(sql.ErrNoRows)
+
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
+		WithArgs("rpl_semi_sync_master_enabled").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("rpl_semi_sync_master_enabled", "ON"))
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != SemiSyncReplica {
+		t.Errorf("expected Type=SemiSyncReplica, got %s", info.Type)
+	}
+	if !info.IsReplica {
+		t.Error("expected IsReplica=true")
+	}
+	if info.ReplicaLagSecs == nil {
+		t.Error("expected ReplicaLagSecs to be set")
+	} else if *info.ReplicaLagSecs != 2 {
+		t.Errorf("expected ReplicaLagSecs=2, got %d", *info.ReplicaLagSecs)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}

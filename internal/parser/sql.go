@@ -39,6 +39,7 @@ const (
 	SetDefault      DDLOperation = "SET_DEFAULT"
 	DropDefault     DDLOperation = "DROP_DEFAULT"
 	MultipleOps     DDLOperation = "MULTIPLE_OPS"
+	CreateTable     DDLOperation = "CREATE_TABLE"
 	OtherDDL        DDLOperation = "OTHER"
 )
 
@@ -46,9 +47,10 @@ const (
 type DMLOperation string
 
 const (
-	Delete DMLOperation = "DELETE"
-	Update DMLOperation = "UPDATE"
-	Insert DMLOperation = "INSERT"
+	Delete   DMLOperation = "DELETE"
+	Update   DMLOperation = "UPDATE"
+	Insert   DMLOperation = "INSERT"
+	LoadData DMLOperation = "LOAD_DATA"
 )
 
 // ParsedSQL holds the result of parsing a SQL statement.
@@ -104,6 +106,11 @@ func Parse(sql string) (*ParsedSQL, error) {
 			result.Database, result.Table = extractTableName(s.TablePairs[0].FromTable)
 		}
 
+	case *sqlparser.CreateTable:
+		result.Type = DDL
+		result.DDLOp = CreateTable
+		result.Database, result.Table = extractTableName(s.Table)
+
 	case *sqlparser.Delete:
 		result.Type = DML
 		result.DMLOp = Delete
@@ -134,6 +141,11 @@ func Parse(sql string) (*ParsedSQL, error) {
 				result.Database, result.Table = extractTableName(tn)
 			}
 		}
+
+	case *sqlparser.Load:
+		result.Type = DML
+		result.DMLOp = LoadData
+		// Note: Vitess doesn't parse LOAD DATA details, so we can't extract table name
 
 	default:
 		result.Type = Unknown
