@@ -293,28 +293,19 @@ func TestGetServerVersion(t *testing.T) {
 }
 
 func TestGetVariable(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("failed to create mock: %v", err)
-	}
-	defer db.Close()
-
 	tests := []struct {
 		name      string
 		varName   string
-		setupMock func()
+		setupMock func(mock sqlmock.Sqlmock)
 		wantValue string
 		wantErr   bool
 	}{
 		{
 			name:    "found with GLOBAL",
 			varName: "max_connections",
-			setupMock: func() {
+			setupMock: func(mock sqlmock.Sqlmock) {
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("max_connections", "151")
-				// Note: sqlmock uses regex matching
-				// The actual query is: SHOW GLOBAL VARIABLES LIKE 'max\\_connections'
-				// In regex: backslash needs to be escaped, so \\ matches one \
 				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'max\\\\_connections'").
 					WillReturnRows(rows)
 			},
@@ -323,14 +314,14 @@ func TestGetVariable(t *testing.T) {
 		{
 			name:    "found without GLOBAL (wsrep_on case)",
 			varName: "wsrep_on",
-			setupMock: func() {
+			setupMock: func(mock sqlmock.Sqlmock) {
 				// First try with GLOBAL returns no rows
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 					WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}))
 				// Second try without GLOBAL succeeds
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("wsrep_on", "ON")
-				mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 					WillReturnRows(rows)
 			},
 			wantValue: "ON",
@@ -338,10 +329,10 @@ func TestGetVariable(t *testing.T) {
 		{
 			name:    "variable not found",
 			varName: "nonexistent_var",
-			setupMock: func() {
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'nonexistent\\_var'").
+			setupMock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'nonexistent\\\\_var'").
 					WillReturnError(sql.ErrNoRows)
-				mock.ExpectQuery("SHOW VARIABLES LIKE 'nonexistent\\_var'").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'nonexistent\\\\_var'").
 					WillReturnError(sql.ErrNoRows)
 			},
 			wantValue: "",
@@ -349,16 +340,16 @@ func TestGetVariable(t *testing.T) {
 		{
 			name:    "NULL value from GLOBAL, empty from non-GLOBAL",
 			varName: "some_var",
-			setupMock: func() {
+			setupMock: func(mock sqlmock.Sqlmock) {
 				// GLOBAL returns NULL
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("some_var", nil)
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'some\\_var'").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'some\\\\_var'").
 					WillReturnRows(rows)
 				// Non-GLOBAL also returns empty/NULL
 				rows2 := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("some_var", nil)
-				mock.ExpectQuery("SHOW VARIABLES LIKE 'some\\_var'").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'some\\\\_var'").
 					WillReturnRows(rows2)
 			},
 			wantValue: "",
@@ -366,10 +357,10 @@ func TestGetVariable(t *testing.T) {
 		{
 			name:    "query error",
 			varName: "error_var",
-			setupMock: func() {
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'error\\_var'").
+			setupMock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'error\\\\_var'").
 					WillReturnError(sql.ErrConnDone)
-				mock.ExpectQuery("SHOW VARIABLES LIKE 'error\\_var'").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'error\\\\_var'").
 					WillReturnError(sql.ErrConnDone)
 			},
 			wantErr: true,
@@ -378,7 +369,13 @@ func TestGetVariable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.setupMock()
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("failed to create mock: %v", err)
+			}
+			defer db.Close()
+
+			tt.setupMock(mock)
 
 			got, err := GetVariable(db, tt.varName)
 			if tt.wantErr {
@@ -394,35 +391,29 @@ func TestGetVariable(t *testing.T) {
 			if got != tt.wantValue {
 				t.Errorf("GetVariable() = %q, want %q", got, tt.wantValue)
 			}
-		})
-	}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unfulfilled expectations: %v", err)
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("unfulfilled expectations: %v", err)
+			}
+		})
 	}
 }
 
 func TestGetStatus(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("failed to create mock: %v", err)
-	}
-	defer db.Close()
-
 	tests := []struct {
 		name      string
 		varName   string
-		setupMock func()
+		setupMock func(mock sqlmock.Sqlmock)
 		wantValue string
 		wantErr   bool
 	}{
 		{
 			name:    "found",
 			varName: "Threads_connected",
-			setupMock: func() {
+			setupMock: func(mock sqlmock.Sqlmock) {
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("Threads_connected", "42")
-				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'Threads\\_connected'").
+				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'Threads\\\\_connected'").
 					WillReturnRows(rows)
 			},
 			wantValue: "42",
@@ -430,7 +421,7 @@ func TestGetStatus(t *testing.T) {
 		{
 			name:    "not found",
 			varName: "nonexistent",
-			setupMock: func() {
+			setupMock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'nonexistent'").
 					WillReturnError(sql.ErrNoRows)
 			},
@@ -439,8 +430,8 @@ func TestGetStatus(t *testing.T) {
 		{
 			name:    "query error",
 			varName: "error_status",
-			setupMock: func() {
-				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'error\\_status'").
+			setupMock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'error\\\\_status'").
 					WillReturnError(sql.ErrConnDone)
 			},
 			wantErr: true,
@@ -449,7 +440,13 @@ func TestGetStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.setupMock()
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("failed to create mock: %v", err)
+			}
+			defer db.Close()
+
+			tt.setupMock(mock)
 
 			got, err := GetStatus(db, tt.varName)
 			if tt.wantErr {
@@ -465,35 +462,29 @@ func TestGetStatus(t *testing.T) {
 			if got != tt.wantValue {
 				t.Errorf("GetStatus() = %q, want %q", got, tt.wantValue)
 			}
-		})
-	}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unfulfilled expectations: %v", err)
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("unfulfilled expectations: %v", err)
+			}
+		})
 	}
 }
 
 func TestGetVariableInt(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("failed to create mock: %v", err)
-	}
-	defer db.Close()
-
 	tests := []struct {
 		name      string
 		varName   string
-		setupMock func()
+		setupMock func(mock sqlmock.Sqlmock)
 		want      int64
 		wantErr   bool
 	}{
 		{
 			name:    "valid integer",
 			varName: "max_connections",
-			setupMock: func() {
+			setupMock: func(mock sqlmock.Sqlmock) {
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("max_connections", "151")
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'max\\_connections'").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'max\\\\_connections'").
 					WillReturnRows(rows)
 			},
 			want: 151,
@@ -501,7 +492,7 @@ func TestGetVariableInt(t *testing.T) {
 		{
 			name:    "variable not found returns 0",
 			varName: "nonexistent",
-			setupMock: func() {
+			setupMock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'nonexistent'").
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectQuery("SHOW VARIABLES LIKE 'nonexistent'").
@@ -513,7 +504,13 @@ func TestGetVariableInt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.setupMock()
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("failed to create mock: %v", err)
+			}
+			defer db.Close()
+
+			tt.setupMock(mock)
 
 			got, err := GetVariableInt(db, tt.varName)
 			if tt.wantErr {
@@ -529,11 +526,11 @@ func TestGetVariableInt(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("GetVariableInt() = %d, want %d", got, tt.want)
 			}
-		})
-	}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unfulfilled expectations: %v", err)
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("unfulfilled expectations: %v", err)
+			}
+		})
 	}
 }
 

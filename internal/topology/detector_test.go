@@ -438,23 +438,23 @@ func TestGetVariable_ActualQuery(t *testing.T) {
 			}
 			defer db.Close()
 
+			// Escape variable name for regex matching (4 backslashes per underscore)
+			escapedName := strings.ReplaceAll(tt.varName, "_", "\\\\_")
+
 			if tt.globalWorks {
 				// SHOW GLOBAL VARIABLES returns the value
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow(tt.varName, tt.mockValue)
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs(tt.varName).
+				mock.ExpectQuery(fmt.Sprintf("SHOW GLOBAL VARIABLES LIKE '%s'", escapedName)).
 					WillReturnRows(rows)
 			} else {
 				// SHOW GLOBAL VARIABLES returns no rows, fallback to SHOW VARIABLES
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs(tt.varName).
+				mock.ExpectQuery(fmt.Sprintf("SHOW GLOBAL VARIABLES LIKE '%s'", escapedName)).
 					WillReturnError(sql.ErrNoRows)
 
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow(tt.varName, tt.mockValue)
-				mock.ExpectQuery("SHOW VARIABLES LIKE ?").
-					WithArgs(tt.varName).
+				mock.ExpectQuery(fmt.Sprintf("SHOW VARIABLES LIKE '%s'", escapedName)).
 					WillReturnRows(rows)
 			}
 
