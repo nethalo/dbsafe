@@ -102,14 +102,21 @@ func ParseVersion(raw string) (ServerVersion, error) {
 func GetVariable(db *sql.DB, name string) (string, error) {
 	var varName, value sql.NullString
 
+	// Escape the variable name for LIKE clause (prevent SQL injection)
+	escapedName := strings.ReplaceAll(name, "_", "\\_")
+	escapedName = strings.ReplaceAll(escapedName, "%", "\\%")
+
 	// Try with GLOBAL first (most variables)
-	err := db.QueryRow("SHOW GLOBAL VARIABLES LIKE ?", name).Scan(&varName, &value)
+	// Note: SHOW commands don't support prepared statements in all MySQL drivers
+	query := fmt.Sprintf("SHOW GLOBAL VARIABLES LIKE '%s'", escapedName)
+	err := db.QueryRow(query).Scan(&varName, &value)
 	if err == nil && value.Valid && value.String != "" {
 		return value.String, nil
 	}
 
 	// If GLOBAL didn't work, try without GLOBAL (needed for some wsrep variables)
-	err = db.QueryRow("SHOW VARIABLES LIKE ?", name).Scan(&varName, &value)
+	query = fmt.Sprintf("SHOW VARIABLES LIKE '%s'", escapedName)
+	err = db.QueryRow(query).Scan(&varName, &value)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil // variable doesn't exist
@@ -128,7 +135,14 @@ func GetVariable(db *sql.DB, name string) (string, error) {
 // GetStatus reads a single MySQL global status variable.
 func GetStatus(db *sql.DB, name string) (string, error) {
 	var varName, value string
-	err := db.QueryRow("SHOW GLOBAL STATUS LIKE ?", name).Scan(&varName, &value)
+
+	// Escape the variable name for LIKE clause
+	escapedName := strings.ReplaceAll(name, "_", "\\_")
+	escapedName = strings.ReplaceAll(escapedName, "%", "\\%")
+
+	// Note: SHOW commands don't support prepared statements in all MySQL drivers
+	query := fmt.Sprintf("SHOW GLOBAL STATUS LIKE '%s'", escapedName)
+	err := db.QueryRow(query).Scan(&varName, &value)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil
