@@ -1,0 +1,28 @@
+# Binaries
+dbsafe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+*.out
+coverage.out
+coverage_output.txt
+
+# Go workspace
+vendor/
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# GoReleaser
+dist/
