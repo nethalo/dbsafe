@@ -147,8 +147,44 @@ func GetVariableInt(db *sql.DB, name string) (int64, error) {
 	return strconv.ParseInt(val, 10, 64)
 }
 
+// validateSafeForExplain checks if SQL is safe to use with EXPLAIN.
+// This prevents SQL injection by ensuring only SELECT/UPDATE/DELETE statements are explained.
+func validateSafeForExplain(sqlText string) error {
+	sqlText = strings.TrimSpace(sqlText)
+	upper := strings.ToUpper(sqlText)
+
+	// Only allow SELECT, UPDATE, DELETE statements
+	// Reject: DROP, INSERT, CREATE, ALTER, GRANT, etc.
+	allowed := false
+	for _, prefix := range []string{"SELECT ", "UPDATE ", "DELETE ", "(SELECT "} {
+		if strings.HasPrefix(upper, prefix) {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		return fmt.Errorf("SQL statement not safe for EXPLAIN: must be SELECT, UPDATE, or DELETE")
+	}
+
+	// Additional check: ensure no semicolons (prevents statement chaining)
+	if strings.Contains(sqlText, ";") {
+		return fmt.Errorf("SQL statement contains semicolon: statement chaining not allowed")
+	}
+
+	return nil
+}
+
 // EstimateRowsAffected runs EXPLAIN on a DML statement to get row estimate.
+// Note: This function validates the SQL is a safe DML statement before executing EXPLAIN.
 func EstimateRowsAffected(db *sql.DB, sqlText string) (int64, error) {
+	// Security: Validate that this is a safe SQL statement before using EXPLAIN
+	// Even though the parser has already validated this, we add defense-in-depth
+	// to prevent SQL injection if this function is ever called with untrusted input.
+	if err := validateSafeForExplain(sqlText); err != nil {
+		return 0, err
+	}
+
 	rows, err := db.Query("EXPLAIN " + sqlText)
 	if err != nil {
 		return 0, fmt.Errorf("EXPLAIN failed: %w", err)

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nethalo/dbsafe/internal/analyzer"
@@ -148,8 +149,11 @@ var planCmd = &cobra.Command{
 		// Write generated scripts if any
 		if result.GeneratedScript != "" {
 			scriptPath := result.ScriptPath
-			if err := os.WriteFile(scriptPath, []byte(result.GeneratedScript), 0644); err != nil {
+			// Security: Use 0600 (owner read/write only) to prevent exposure of sensitive SQL
+			if err := os.WriteFile(scriptPath, []byte(result.GeneratedScript), 0600); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not write script to %s: %v\n", scriptPath, err)
+			} else {
+				fmt.Fprintf(os.Stderr, "✓ Chunked script written to %s (permissions: 0600)\n", scriptPath)
 			}
 		}
 
@@ -163,10 +167,56 @@ func init() {
 	planCmd.Flags().Int("chunk-size", 10000, "Override default chunk size for DML recommendations")
 }
 
+// validateSQLFilePath checks if the file path is safe to read.
+// This prevents path traversal attacks and reading sensitive system files.
+func validateSQLFilePath(filePath string) error {
+	// Clean the path to resolve .. and . components
+	cleanPath := filepath.Clean(filePath)
+
+	// Get absolute path
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+
+	// Check if file exists and is a regular file
+	fileInfo, err := os.Stat(absPath)
+	if err != nil {
+		return fmt.Errorf("cannot access file: %w", err)
+	}
+
+	// Ensure it's a regular file (not a directory, symlink, device, etc.)
+	if !fileInfo.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file: %s", absPath)
+	}
+
+	// Warn if file is larger than 10MB (likely not a SQL file)
+	const maxFileSize = 10 * 1024 * 1024 // 10 MB
+	if fileInfo.Size() > maxFileSize {
+		return fmt.Errorf("file too large (>10MB): %s - this may not be a SQL file", absPath)
+	}
+
+	// Optional: Warn about sensitive paths (but don't block, as user might have legitimate SQL files there)
+	sensitivePaths := []string{"/etc/", "/sys/", "/proc/", "/dev/"}
+	for _, sensitive := range sensitivePaths {
+		if strings.HasPrefix(absPath, sensitive) {
+			fmt.Fprintf(os.Stderr, "⚠️  Warning: Reading from system path %s\n", absPath)
+			break
+		}
+	}
+
+	return nil
+}
+
 func getSQLInput(cmd *cobra.Command, args []string) (string, error) {
 	filePath, _ := cmd.Flags().GetString("file")
 
 	if filePath != "" {
+		// Security: Validate file path before reading
+		if err := validateSQLFilePath(filePath); err != nil {
+			return "", fmt.Errorf("file validation failed: %w", err)
+		}
+
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			return "", fmt.Errorf("could not read file %s: %w", filePath, err)

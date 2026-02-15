@@ -3,6 +3,7 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // TableMetadata holds all metadata about a table needed for analysis.
@@ -69,6 +70,16 @@ type ColumnInfo struct {
 	Collation    *string
 }
 
+// escapeIdentifier safely escapes a MySQL identifier (database, table, column name)
+// by wrapping it in backticks and escaping any backticks within the identifier.
+// This prevents SQL injection when building dynamic queries with identifier names.
+func escapeIdentifier(identifier string) string {
+	// Replace backticks with escaped backticks
+	escaped := strings.ReplaceAll(identifier, "`", "``")
+	// Wrap in backticks
+	return "`" + escaped + "`"
+}
+
 // GetTableMetadata collects comprehensive metadata about a table.
 func GetTableMetadata(db *sql.DB, database, table string) (*TableMetadata, error) {
 	meta := &TableMetadata{
@@ -106,7 +117,9 @@ func GetTableMetadata(db *sql.DB, database, table string) (*TableMetadata, error
 
 	// SHOW CREATE TABLE for full definition
 	var tblName, createStmt string
-	err = db.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table)).Scan(&tblName, &createStmt)
+	// Security: Use escapeIdentifier to prevent SQL injection via database/table names
+	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", escapeIdentifier(database), escapeIdentifier(table))
+	err = db.QueryRow(query).Scan(&tblName, &createStmt)
 	if err == nil {
 		meta.CreateTable = createStmt
 	}
