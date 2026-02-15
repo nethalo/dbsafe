@@ -262,11 +262,11 @@ func TestDetect_PXCCluster(t *testing.T) {
 
 	// Mock wsrep_on (Galera detection)
 	// wsrep_on requires SHOW VARIABLES (not GLOBAL)
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 	wsrepOnRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_on", "ON")
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnRows(wsrepOnRows)
 
 	// Mock wsrep_cluster_size status
@@ -338,11 +338,11 @@ func TestDetect_VerboseLogging(t *testing.T) {
 
 	// Mock wsrep_on query
 	// wsrep_on requires SHOW VARIABLES (not GLOBAL)
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 	wsrepOnRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_on", "ON")
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnRows(wsrepOnRows)
 
 	// Mock wsrep_cluster_size status
@@ -500,9 +500,9 @@ func TestDetect_Standalone(t *testing.T) {
 		WillReturnRows(superReadOnlyRows)
 
 	// Mock wsrep_on - doesn't exist on standalone
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication_group_name - doesn't exist
@@ -557,9 +557,9 @@ func TestDetect_GroupReplication_SinglePrimary(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
 
 	// Mock wsrep_on - not Galera
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock Group Replication detection
@@ -633,9 +633,9 @@ func TestDetect_GroupReplication_MultiPrimary(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
 
 	// Mock wsrep_on - not Galera
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock Group Replication - multi-primary
@@ -702,9 +702,9 @@ func TestDetect_AsyncReplication_Replica(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
 
 	// Mock wsrep_on - not Galera
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication_group_name - not Group Replication
@@ -785,9 +785,9 @@ func TestDetect_AsyncReplication_Primary(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
 
 	// Mock wsrep_on - not Galera
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication_group_name - not GR
@@ -856,9 +856,9 @@ func TestDetect_SemiSyncReplication(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
 
 	// Mock wsrep_on - not Galera
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication - not GR
@@ -918,9 +918,9 @@ func TestDetect_SemiSync_OldSyntax(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
 
 	// Mock wsrep_on - not Galera
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication - not GR
