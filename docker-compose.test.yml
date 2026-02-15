@@ -1,12 +1,11 @@
 # Docker Compose setup for integration testing
 # Provides MySQL instances for end-to-end testing
 
-version: '3.8'
-
 services:
   # Standalone MySQL 8.0
   mysql-standalone:
     image: mysql:8.0
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: test_root_password
       MYSQL_DATABASE: testdb
@@ -25,6 +24,7 @@ services:
   # MySQL 8.4 LTS
   mysql-lts:
     image: mysql:8.4
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: test_root_password
       MYSQL_DATABASE: testdb
@@ -43,6 +43,7 @@ services:
   # Percona Server 8.0
   percona:
     image: percona:8.0
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: test_root_password
       MYSQL_DATABASE: testdb
@@ -61,6 +62,7 @@ services:
   # Percona XtraDB Cluster (Galera) - Node 1
   pxc-node1:
     image: percona/percona-xtradb-cluster:8.0
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: test_root_password
       CLUSTER_NAME: test_cluster
@@ -75,6 +77,7 @@ services:
   # MySQL Group Replication - Primary
   gr-primary:
     image: mysql:8.0
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: test_root_password
       MYSQL_DATABASE: testdb
@@ -103,6 +106,7 @@ services:
   # Async Replication - Primary
   repl-primary:
     image: mysql:8.0
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: test_root_password
       MYSQL_DATABASE: testdb
@@ -126,6 +130,7 @@ services:
   # Async Replication - Replica
   repl-replica:
     image: mysql:8.0
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: test_root_password
       MYSQL_DATABASE: testdb
