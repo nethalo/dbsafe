@@ -114,10 +114,172 @@ defaults:
 - Galera/PXC: Read `wsrep_cluster_size` from **status** first, fallback to variable
 
 ### Testing
-- Test files: `*_test.go` in same package
-- Parser tests validate SQL extraction accuracy
-- Analyzer tests verify DDL matrix classifications
-- Renderer tests check output format correctness
+
+**Test files**: `*_test.go` in same package
+
+**Test types**:
+- **Unit tests**: Parser, analyzer, renderer tests
+- **Integration tests**: `test/integration_test.go` with real MySQL containers (build tag: `// +build integration`)
+- **Benchmarks**: Performance tracking with allocation profiling
+- **Fuzz tests**: Edge case discovery with seed corpus
+
+**Running tests**:
+```bash
+# Unit tests only
+go test ./...
+
+# Integration tests (requires Docker)
+./scripts/run-integration-tests.sh
+
+# With coverage
+go test -cover ./...
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+#### Critical Testing Lessons
+
+**1. Mock Structure - ALWAYS Isolate Mocks Per Subtest**
+
+❌ **WRONG** - Shared mock causes expectation conflicts:
+```go
+func TestSomething(t *testing.T) {
+    db, mock, _ := sqlmock.New()  // Created once
+    defer db.Close()
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            tt.setupMock()  // All subtests add to same mock
+            // Expectations pile up and execute in wrong order!
+        })
+    }
+}
+```
+
+✅ **CORRECT** - Each subtest gets its own mock:
+```go
+func TestSomething(t *testing.T) {
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            db, mock, _ := sqlmock.New()  // Fresh mock per subtest
+            defer db.Close()
+
+            tt.setupMock(mock)  // Isolated expectations
+        })
+    }
+}
+```
+
+**2. sqlmock Regex Escaping - The 4-Backslash Rule**
+
+MySQL LIKE patterns with underscores require **4 backslashes** in sqlmock expectations:
+
+```go
+// Actual SQL query sent to MySQL:
+"SHOW GLOBAL VARIABLES LIKE 'wsrep\_on'"  // 1 backslash in SQL
+
+// sqlmock regex pattern needs to match that backslash:
+// Regex: \\ matches one literal backslash
+// Go string: \\\\ produces \\ in regex
+mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'")  // 4 backslashes in source
+```
+
+**The escaping chain**:
+1. Go source code: `\\\\_` (4 backslashes)
+2. Go string literal: `\\_` (2 backslashes after Go interprets it)
+3. Regex pattern: `\_` (matches 1 literal backslash + underscore in SQL)
+4. MySQL query: `\_` (1 backslash in actual SQL)
+
+**Common patterns requiring 4 backslashes**:
+```go
+'read\\\\_only'
+'super\\\\_read\\\\_only'
+'wsrep\\\\_on'
+'wsrep\\\\_cluster\\\\_size'
+'group\\\\_replication\\\\_group\\\\_name'
+```
+
+**3. MySQL SHOW Commands Don't Support Prepared Statements**
+
+❌ **WRONG** - Causes syntax error:
+```go
+db.QueryRow("SHOW VARIABLES LIKE ?", name)
+// Error: You have an error in your SQL syntax near '?' at line 1
+```
+
+✅ **CORRECT** - Use direct string formatting with escaping:
+```go
+escapedName := strings.ReplaceAll(name, "_", "\\_")
+escapedName = strings.ReplaceAll(escapedName, "%", "\\%")
+query := fmt.Sprintf("SHOW GLOBAL VARIABLES LIKE '%s'", escapedName)
+db.QueryRow(query)
+```
+
+**Security note**: Variable names are system-defined constants (not user input), so direct formatting is safe.
+
+**4. Two-Query Fallback Pattern for Variables**
+
+Some MySQL variables (like `wsrep_on`) aren't available via `SHOW GLOBAL VARIABLES`:
+
+```go
+func GetVariable(db *sql.DB, name string) (string, error) {
+    // Try GLOBAL first
+    query := fmt.Sprintf("SHOW GLOBAL VARIABLES LIKE '%s'", escapedName)
+    err := db.QueryRow(query).Scan(&varName, &value)
+    if err == sql.ErrNoRows {
+        // Fallback to non-GLOBAL
+        query = fmt.Sprintf("SHOW VARIABLES LIKE '%s'", escapedName)
+        err = db.QueryRow(query).Scan(&varName, &value)
+    }
+    return value, err
+}
+```
+
+**Mock both queries**:
+```go
+// First attempt with GLOBAL returns no rows
+mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
+    WillReturnError(sql.ErrNoRows)
+
+// Second attempt without GLOBAL succeeds
+mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
+    WillReturnRows(rows)
+```
+
+**5. Integration Test Docker Setup**
+
+**Apple Silicon compatibility** - Add platform specification:
+```yaml
+services:
+  mysql-standalone:
+    image: mysql:8.0
+    platform: linux/amd64  # Required for ARM64 Macs (uses Rosetta 2)
+```
+
+**Test execution** - Keep containers running for fast iteration:
+```bash
+./scripts/run-integration-tests.sh -s -k  # Start containers, keep running
+./scripts/run-integration-tests.sh -t     # Run tests only (~3 seconds)
+./scripts/run-integration-tests.sh -c     # Cleanup when done
+```
+
+**6. Fixing Escaping Issues - Use Byte-Level Operations**
+
+When shell/sed/perl escaping becomes confusing, use Python byte mode:
+```python
+with open('file.go', 'rb') as f:
+    content = f.read()
+
+# Match and replace actual bytes
+old = b"'wsrep\\\\_on'"     # 2 backslashes in file
+new = b"'wsrep\\\\\\\\_on'"  # 4 backslashes in file
+content = content.replace(old, new)
+
+with open('file.go', 'wb') as f:
+    f.write(content)
+```
+
+This bypasses all shell/string interpretation layers.
 
 ## MySQL Interaction Constraints
 
