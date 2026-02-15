@@ -272,7 +272,7 @@ func TestDetect_PXCCluster(t *testing.T) {
 	// Mock wsrep_cluster_size status
 	clusterSizeRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_cluster_size", "3")
-	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\_cluster\\_size'").
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\\\_cluster\\\\_size'").
 		WillReturnRows(clusterSizeRows)
 
 	// Mock additional Galera info
@@ -348,7 +348,7 @@ func TestDetect_VerboseLogging(t *testing.T) {
 	// Mock wsrep_cluster_size status
 	clusterSizeRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_cluster_size", "3")
-	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\_cluster\\_size'").
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\\\_cluster\\\\_size'").
 		WillReturnRows(clusterSizeRows)
 
 	// Mock additional Galera info
