@@ -9,8 +9,6 @@
 <p align="center">
 	<a href="https://github.com/nethalo/dbsafe/releases"><img src="https://img.shields.io/github/v/release/nethalo/dbsafe?style=flat-square" alt="Latest Release"></a>
 	<a href="https://github.com/nethalo/dbsafe/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square" alt="License"></a>
-	<a href="https://github.com/nethalo/dbsafe/actions"><img src="https://img.shields.io/github/actions/workflow/status/nethalo/dbsafe/release.yml?style=flat-square" alt="Build Status"></a>
-	<a href="https://goreportcard.com/report/github.com/nethalo/dbsafe"><img src="https://goreportcard.com/badge/github.com/nethalo/dbsafe?style=flat-square" alt="Go Report Card"></a>
 </p>
 
 <p align="center">
