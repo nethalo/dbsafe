@@ -175,25 +175,25 @@ func TestDetectGalera(t *testing.T) {
 					// wsrep_local_state_comment status
 					stateRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 						AddRow("wsrep_local_state_comment", "Synced")
-					mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\_local\\_state\\_comment'").
+					mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\\\_local\\\\_state\\\\_comment'").
 						WillReturnRows(stateRows)
 
 					// wsrep_OSU_method variable
 					osuRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 						AddRow("wsrep_OSU_method", "TOI")
-					mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_OSU\\_method'").
+					mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_OSU\\\\_method'").
 						WillReturnRows(osuRows)
 
 					// wsrep_max_ws_size variable
 					maxWsRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 						AddRow("wsrep_max_ws_size", "2147483647")
-					mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_max\\_ws\\_size'").
+					mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_max\\\\_ws\\\\_size'").
 						WillReturnRows(maxWsRows)
 
 					// wsrep_flow_control_paused status
 					fcRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 						AddRow("wsrep_flow_control_paused", "0.0")
-					mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\_flow\\_control\\_paused'").
+					mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\\\_flow\\\\_control\\\\_paused'").
 						WillReturnRows(fcRows)
 				}
 			}
@@ -251,13 +251,13 @@ func TestDetect_PXCCluster(t *testing.T) {
 	// Mock read_only
 	readOnlyRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("read_only", "OFF")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(readOnlyRows)
 
 	// Mock super_read_only
 	superReadOnlyRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("super_read_only", "OFF")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\_read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(superReadOnlyRows)
 
 	// Mock wsrep_on (Galera detection)
@@ -278,22 +278,22 @@ func TestDetect_PXCCluster(t *testing.T) {
 	// Mock additional Galera info
 	stateRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_local_state_comment", "Synced")
-	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\_local\\_state\\_comment'").
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\\\_local\\\\_state\\\\_comment'").
 		WillReturnRows(stateRows)
 
 	osuRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_OSU_method", "TOI")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_OSU\\_method'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_OSU\\\\_method'").
 		WillReturnRows(osuRows)
 
 	maxWsRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_max_ws_size", "2147483647")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_max\\_ws\\_size'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_max\\\\_ws\\\\_size'").
 		WillReturnRows(maxWsRows)
 
 	fcRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("wsrep_flow_control_paused", "0.0")
-	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\_flow\\_control\\_paused'").
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\\\_flow\\\\_control\\\\_paused'").
 		WillReturnRows(fcRows)
 
 	info, err := Detect(db, false)
@@ -333,7 +333,7 @@ func TestDetect_VerboseLogging(t *testing.T) {
 	// Mock version_comment query (new debug query)
 	versionCommentRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("version_comment", "Percona XtraDB Cluster (GPL), Release rel34, Revision 0682ba7, WSREP version 26.1.4.3")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'version\\_comment'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'version\\\\_comment'").
 		WillReturnRows(versionCommentRows)
 
 	// Mock wsrep_on query
@@ -352,13 +352,13 @@ func TestDetect_VerboseLogging(t *testing.T) {
 		WillReturnRows(clusterSizeRows)
 
 	// Mock additional Galera info
-	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\_local\\_state\\_comment'").
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\\\_local\\\\_state\\\\_comment'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("wsrep_local_state_comment", "Synced"))
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_OSU\\_method'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_OSU\\\\_method'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("wsrep_OSU_method", "TOI"))
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_max\\_ws\\_size'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_max\\\\_ws\\\\_size'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("wsrep_max_ws_size", "2147483647"))
-	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\_flow\\_control\\_paused'").
+	mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'wsrep\\\\_flow\\\\_control\\\\_paused'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("wsrep_flow_control_paused", "0.0"))
 
 	info := &Info{
@@ -490,13 +490,13 @@ func TestDetect_Standalone(t *testing.T) {
 	// Mock read_only
 	readOnlyRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("read_only", "OFF")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(readOnlyRows)
 
 	// Mock super_read_only
 	superReadOnlyRows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 		AddRow("super_read_only", "OFF")
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\_read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(superReadOnlyRows)
 
 	// Mock wsrep_on - doesn't exist on standalone
@@ -506,7 +506,7 @@ func TestDetect_Standalone(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication_group_name - doesn't exist
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_group\\_name'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_group\\\\_name'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock SHOW REPLICA STATUS - not a replica
@@ -549,11 +549,11 @@ func TestDetect_GroupReplication_SinglePrimary(t *testing.T) {
 		WillReturnRows(versionRows)
 
 	// Mock read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
 
 	// Mock super_read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\_read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
 
 	// Mock wsrep_on - not Galera
@@ -563,17 +563,17 @@ func TestDetect_GroupReplication_SinglePrimary(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock Group Replication detection
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_group\\_name'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_group\\\\_name'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("group_replication_group_name", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
 
 	// Mock single primary mode
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_single\\_primary\\_mode'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_single\\\\_primary\\\\_mode'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("group_replication_single_primary_mode", "ON"))
 
 	// Mock transaction size limit
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_transaction\\_size\\_limit'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_transaction\\\\_size\\\\_limit'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("group_replication_transaction_size_limit", "150000000"))
 
@@ -625,11 +625,11 @@ func TestDetect_GroupReplication_MultiPrimary(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
 
 	// Mock read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
 
 	// Mock super_read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\_read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
 
 	// Mock wsrep_on - not Galera
@@ -639,15 +639,15 @@ func TestDetect_GroupReplication_MultiPrimary(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock Group Replication - multi-primary
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_group\\_name'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_group\\\\_name'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("group_replication_group_name", "test-group"))
 
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_single\\_primary\\_mode'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_single\\\\_primary\\\\_mode'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("group_replication_single_primary_mode", "OFF"))
 
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_transaction\\_size\\_limit'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_transaction\\\\_size\\\\_limit'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("group_replication_transaction_size_limit", "150000000"))
 
@@ -694,11 +694,11 @@ func TestDetect_AsyncReplication_Replica(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
 
 	// Mock read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
 
 	// Mock super_read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\_read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
 
 	// Mock wsrep_on - not Galera
@@ -708,7 +708,7 @@ func TestDetect_AsyncReplication_Replica(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication_group_name - not Group Replication
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_group\\_name'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_group\\\\_name'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock SHOW REPLICA STATUS - is a replica
@@ -731,13 +731,13 @@ func TestDetect_AsyncReplication_Replica(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
 
 	// Mock semi-sync check
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\_semi\\_sync\\_source\\_enabled'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_source\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\_semi\\_sync\\_source\\_enabled'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_source\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\_semi\\_sync\\_master\\_enabled'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_master\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\_semi\\_sync\\_master\\_enabled'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_master\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
 
 	info, err := Detect(db, false)
@@ -777,11 +777,11 @@ func TestDetect_AsyncReplication_Primary(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
 
 	// Mock read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
 
 	// Mock super_read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\_read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
 
 	// Mock wsrep_on - not Galera
@@ -791,7 +791,7 @@ func TestDetect_AsyncReplication_Primary(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication_group_name - not GR
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_group\\_name'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_group\\\\_name'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock SHOW REPLICA STATUS - not a replica (returns no rows)
@@ -807,13 +807,13 @@ func TestDetect_AsyncReplication_Primary(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(2))
 
 	// Mock semi-sync check - not enabled
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\_semi\\_sync\\_source\\_enabled'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_source\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\_semi\\_sync\\_source\\_enabled'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_source\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\_semi\\_sync\\_master\\_enabled'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_master\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\_semi\\_sync\\_master\\_enabled'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_master\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
 
 	info, err := Detect(db, false)
@@ -848,11 +848,11 @@ func TestDetect_SemiSyncReplication(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
 
 	// Mock read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
 
 	// Mock super_read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\_read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
 
 	// Mock wsrep_on - not Galera
@@ -862,7 +862,7 @@ func TestDetect_SemiSyncReplication(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication - not GR
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_group\\_name'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_group\\\\_name'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock SHOW REPLICA STATUS - is a replica (MySQL 8.0.22+)
@@ -877,7 +877,7 @@ func TestDetect_SemiSyncReplication(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
 
 	// Mock semi-sync - source enabled
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\_semi\\_sync\\_source\\_enabled'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_source\\\\_enabled'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("rpl_semi_sync_source_enabled", "ON"))
 
@@ -910,11 +910,11 @@ func TestDetect_SemiSync_OldSyntax(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("5.7.40"))
 
 	// Mock read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
 
 	// Mock super_read_only
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\_read\\_only'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
 
 	// Mock wsrep_on - not Galera
@@ -924,7 +924,7 @@ func TestDetect_SemiSync_OldSyntax(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock group_replication - not GR
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\_replication\\_group\\_name'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_group\\\\_name'").
 		WillReturnError(sql.ErrNoRows)
 
 	// Mock SHOW REPLICA STATUS - not supported in MySQL 5.7
@@ -943,12 +943,12 @@ func TestDetect_SemiSync_OldSyntax(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
 
 	// Mock semi-sync - source not available, use master
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\_semi\\_sync\\_source\\_enabled'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_source\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\_semi\\_sync\\_source\\_enabled'").
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_source\\\\_enabled'").
 		WillReturnError(sql.ErrNoRows)
 
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\_semi\\_sync\\_master\\_enabled'").
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'rpl\\\\_semi\\\\_sync\\\\_master\\\\_enabled'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("rpl_semi_sync_master_enabled", "ON"))
 
