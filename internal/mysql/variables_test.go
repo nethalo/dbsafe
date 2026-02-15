@@ -312,8 +312,10 @@ func TestGetVariable(t *testing.T) {
 			setupMock: func() {
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("max_connections", "151")
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs("max_connections").
+				// Note: sqlmock uses regex matching
+				// The actual query is: SHOW GLOBAL VARIABLES LIKE 'max\\_connections'
+				// In regex: backslash needs to be escaped, so \\ matches one \
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'max\\\\_connections'").
 					WillReturnRows(rows)
 			},
 			wantValue: "151",
@@ -323,14 +325,12 @@ func TestGetVariable(t *testing.T) {
 			varName: "wsrep_on",
 			setupMock: func() {
 				// First try with GLOBAL returns no rows
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs("wsrep_on").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\_on'").
 					WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}))
 				// Second try without GLOBAL succeeds
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("wsrep_on", "ON")
-				mock.ExpectQuery("SHOW VARIABLES LIKE ?").
-					WithArgs("wsrep_on").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\_on'").
 					WillReturnRows(rows)
 			},
 			wantValue: "ON",
@@ -339,11 +339,9 @@ func TestGetVariable(t *testing.T) {
 			name:    "variable not found",
 			varName: "nonexistent_var",
 			setupMock: func() {
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs("nonexistent_var").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'nonexistent\\_var'").
 					WillReturnError(sql.ErrNoRows)
-				mock.ExpectQuery("SHOW VARIABLES LIKE ?").
-					WithArgs("nonexistent_var").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'nonexistent\\_var'").
 					WillReturnError(sql.ErrNoRows)
 			},
 			wantValue: "",
@@ -355,14 +353,12 @@ func TestGetVariable(t *testing.T) {
 				// GLOBAL returns NULL
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("some_var", nil)
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs("some_var").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'some\\_var'").
 					WillReturnRows(rows)
 				// Non-GLOBAL also returns empty/NULL
 				rows2 := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("some_var", nil)
-				mock.ExpectQuery("SHOW VARIABLES LIKE ?").
-					WithArgs("some_var").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'some\\_var'").
 					WillReturnRows(rows2)
 			},
 			wantValue: "",
@@ -371,11 +367,9 @@ func TestGetVariable(t *testing.T) {
 			name:    "query error",
 			varName: "error_var",
 			setupMock: func() {
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs("error_var").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'error\\_var'").
 					WillReturnError(sql.ErrConnDone)
-				mock.ExpectQuery("SHOW VARIABLES LIKE ?").
-					WithArgs("error_var").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'error\\_var'").
 					WillReturnError(sql.ErrConnDone)
 			},
 			wantErr: true,
@@ -428,8 +422,7 @@ func TestGetStatus(t *testing.T) {
 			setupMock: func() {
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("Threads_connected", "42")
-				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE ?").
-					WithArgs("Threads_connected").
+				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'Threads\\_connected'").
 					WillReturnRows(rows)
 			},
 			wantValue: "42",
@@ -438,8 +431,7 @@ func TestGetStatus(t *testing.T) {
 			name:    "not found",
 			varName: "nonexistent",
 			setupMock: func() {
-				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE ?").
-					WithArgs("nonexistent").
+				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'nonexistent'").
 					WillReturnError(sql.ErrNoRows)
 			},
 			wantValue: "",
@@ -448,8 +440,7 @@ func TestGetStatus(t *testing.T) {
 			name:    "query error",
 			varName: "error_status",
 			setupMock: func() {
-				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE ?").
-					WithArgs("error_status").
+				mock.ExpectQuery("SHOW GLOBAL STATUS LIKE 'error\\_status'").
 					WillReturnError(sql.ErrConnDone)
 			},
 			wantErr: true,
@@ -502,8 +493,7 @@ func TestGetVariableInt(t *testing.T) {
 			setupMock: func() {
 				rows := sqlmock.NewRows([]string{"Variable_name", "Value"}).
 					AddRow("max_connections", "151")
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs("max_connections").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'max\\_connections'").
 					WillReturnRows(rows)
 			},
 			want: 151,
@@ -512,11 +502,9 @@ func TestGetVariableInt(t *testing.T) {
 			name:    "variable not found returns 0",
 			varName: "nonexistent",
 			setupMock: func() {
-				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE ?").
-					WithArgs("nonexistent").
+				mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'nonexistent'").
 					WillReturnError(sql.ErrNoRows)
-				mock.ExpectQuery("SHOW VARIABLES LIKE ?").
-					WithArgs("nonexistent").
+				mock.ExpectQuery("SHOW VARIABLES LIKE 'nonexistent'").
 					WillReturnError(sql.ErrNoRows)
 			},
 			want: 0,
