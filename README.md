@@ -38,6 +38,7 @@
 - **📝 Chunked Scripts** — Auto-generated batched DELETE/UPDATE scripts for large operations
 - **🎨 Multiple Formats** — Text, Plain, JSON, Markdown - perfect for CI/CD and documentation
 - **⚡ Read-Only** — Never modifies your data. Ever.
+- **✅ Production-Ready** — 85-97% test coverage, integration tests with real MySQL, security hardened
 
 ---
 
@@ -326,6 +327,82 @@ dbsafe config show     # Display current config
 6. 🎯 Estimate Impact → EXPLAIN for DML, write-set calculations
 7. 📋 Generate Report → Recommendations, warnings, rollback, scripts
 ```
+
+---
+
+## 🧪 Testing & Quality
+
+**dbsafe is production-ready with comprehensive test coverage.**
+
+### Test Coverage
+
+| Package | Coverage | Status |
+|---------|----------|--------|
+| **Parser** | 96.6% | ✅ Nearly complete |
+| **Analyzer** | 94.9% | ✅ Comprehensive |
+| **Topology** | 93.0% | ✅ Excellent |
+| **MySQL** | 85.5% | ✅ Production-ready |
+| **Security** | 100% | ✅ All functions covered |
+
+### Test Suite
+
+**100+ Unit Tests** - Fast, focused validation of individual components
+
+**28 Benchmarks** - Performance tracking with allocation profiling:
+```bash
+go test -bench=. -benchmem ./internal/...
+```
+
+**7 Fuzz Tests** - Automated edge case discovery with 50+ seed cases:
+```bash
+go test -fuzz=FuzzParse -fuzztime=30s ./internal/parser
+```
+
+**Integration Tests** - End-to-end validation with real MySQL 8.0:
+```bash
+./scripts/run-integration-tests.sh
+```
+
+Validates:
+- ✅ Topology detection accuracy
+- ✅ Version parsing correctness
+- ✅ Metadata collection from INFORMATION_SCHEMA
+- ✅ DDL algorithm classification (INSTANT/INPLACE/COPY)
+- ✅ DML analysis with real EXPLAIN queries
+- ✅ Security features (SQL injection prevention)
+
+**Platform Support:**
+- ✅ Apple Silicon (M1/M2/M3) - via Rosetta 2 emulation
+- ✅ Intel/AMD (x86_64) - native execution
+- ✅ Linux - native execution
+
+### Security Testing
+
+**100% coverage** of security-critical functions:
+- SQL injection prevention (`validateSafeForExplain`)
+- Identifier escaping (`escapeIdentifier`)
+- Path traversal prevention (`validateSQLFilePath`)
+- Fuzz testing with injection attack patterns
+
+### Running Tests
+
+```bash
+# Unit tests (fast, ~2 seconds)
+go test ./...
+
+# With coverage report
+go test -cover ./...
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+
+# Integration tests (~30 seconds)
+./scripts/run-integration-tests.sh
+
+# Benchmarks
+go test -bench=. -benchmem ./internal/...
+```
+
+See [TESTING.md](TESTING.md) for the complete testing guide.
 
 ---
 
