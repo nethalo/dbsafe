@@ -280,7 +280,7 @@ func TestIntegration_DDLClassification(t *testing.T) {
 	tests := []struct {
 		name              string
 		sql               string
-		expectedAlgorithm analyzer.AlgorithmType
+		expectedAlgorithm analyzer.Algorithm
 	}{
 		{
 			name:              "ADD COLUMN trailing - INSTANT in 8.0.12+",
