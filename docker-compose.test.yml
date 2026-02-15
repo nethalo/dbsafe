@@ -1,0 +1,150 @@
+# Docker Compose setup for integration testing
+# Provides MySQL instances for end-to-end testing
+
+version: '3.8'
+
+services:
+  # Standalone MySQL 8.0
+  mysql-standalone:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: dbsafe
+      MYSQL_PASSWORD: test_password
+    ports:
+      - "13306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/mysql:size=1G
+
+  # MySQL 8.4 LTS
+  mysql-lts:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: dbsafe
+      MYSQL_PASSWORD: test_password
+    ports:
+      - "13307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/mysql:size=1G
+
+  # Percona Server 8.0
+  percona:
+    image: percona:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: dbsafe
+      MYSQL_PASSWORD: test_password
+    ports:
+      - "13308:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/mysql:size=1G
+
+  # Percona XtraDB Cluster (Galera) - Node 1
+  pxc-node1:
+    image: percona/percona-xtradb-cluster:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      CLUSTER_NAME: test_cluster
+      XTRABACKUP_PASSWORD: test_xtrabackup_password
+    ports:
+      - "13309:3306"
+    volumes:
+      - ./test/pxc-bootstrap.sql:/docker-entrypoint-initdb.d/bootstrap.sql
+    tmpfs:
+      - /var/lib/mysql:size=1G
+
+  # MySQL Group Replication - Primary
+  gr-primary:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: dbsafe
+      MYSQL_PASSWORD: test_password
+    ports:
+      - "13310:3306"
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --enforce-gtid-consistency=ON
+      --gtid-mode=ON
+      --binlog-checksum=NONE
+      --master-info-repository=TABLE
+      --relay-log-info-repository=TABLE
+      --transaction-write-set-extraction=XXHASH64
+      --disabled_storage_engines="MyISAM,BLACKHOLE,FEDERATED,ARCHIVE"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/mysql:size=1G
+
+  # Async Replication - Primary
+  repl-primary:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: dbsafe
+      MYSQL_PASSWORD: test_password
+    ports:
+      - "13311:3306"
+    command: >
+      --server-id=10
+      --log-bin=mysql-bin
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/mysql:size=1G
+
+  # Async Replication - Replica
+  repl-replica:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: dbsafe
+      MYSQL_PASSWORD: test_password
+    ports:
+      - "13312:3306"
+    command: >
+      --server-id=11
+      --log-bin=mysql-bin
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read-only=ON
+    depends_on:
+      - repl-primary
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/mysql:size=1G
