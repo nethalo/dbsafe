@@ -50,7 +50,7 @@
 
 ```bash
 # Set version
-VERSION=0.1.2
+VERSION=0.2.1
 
 # macOS (Apple Silicon)
 curl -L https://github.com/nethalo/dbsafe/releases/download/v${VERSION}/dbsafe_${VERSION}_darwin_arm64.tar.gz | tar xz
