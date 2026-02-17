@@ -102,11 +102,26 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 		fmt.Fprintf(r.w, "> **Disk space required:** ~%s\n> %s\n\n", result.DiskEstimate.RequiredHuman, result.DiskEstimate.Reason)
 	}
 
-	// Execution command (if available)
+	// Execution command(s) (if available)
 	if result.ExecutionCommand != "" {
-		fmt.Fprintf(r.w, "## 🚀 Execution Command\n\n")
-		fmt.Fprintf(r.w, "Ready-to-run command (review and adjust as needed):\n\n")
-		fmt.Fprintf(r.w, "```bash\n%s\n```\n\n", result.ExecutionCommand)
+		fmt.Fprintf(r.w, "## 🚀 Execution Commands\n\n")
+		fmt.Fprintf(r.w, "Ready-to-run commands (review and adjust as needed):\n\n")
+		if result.AlternativeMethod != "" {
+			fmt.Fprintf(r.w, "### Option 1 (Recommended): %s\n\n", result.Method)
+			fmt.Fprintf(r.w, "```bash\n%s\n```\n\n", result.ExecutionCommand)
+			fmt.Fprintf(r.w, "### Option 2: %s\n\n", result.AlternativeMethod)
+			if result.AlternativeExecutionCommand != "" {
+				fmt.Fprintf(r.w, "```bash\n%s\n```\n\n", result.AlternativeExecutionCommand)
+			}
+			if result.MethodRationale != "" {
+				fmt.Fprintf(r.w, "> %s\n\n", result.MethodRationale)
+			}
+		} else {
+			fmt.Fprintf(r.w, "```bash\n%s\n```\n\n", result.ExecutionCommand)
+			if result.MethodRationale != "" {
+				fmt.Fprintf(r.w, "> %s\n\n", result.MethodRationale)
+			}
+		}
 	}
 
 	// Rollback

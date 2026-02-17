@@ -25,12 +25,15 @@ type jsonPlanOutput struct {
 	TableMeta jsonTableMeta  `json:"table_metadata"`
 	Topology  jsonTopology   `json:"topology"`
 	Operation jsonOperation  `json:"operation"`
-	Risk             string   `json:"risk"`
-	Method           string   `json:"recommended_method"`
-	Recommendation   string   `json:"recommendation"`
-	ExecutionCommand string   `json:"execution_command,omitempty"`
-	Warnings         []string `json:"warnings,omitempty"`
-	ClusterWarnings  []string `json:"cluster_warnings,omitempty"`
+	Risk                        string   `json:"risk"`
+	Method                      string   `json:"recommended_method"`
+	AlternativeMethod           string   `json:"alternative_method,omitempty"`
+	Recommendation              string   `json:"recommendation"`
+	ExecutionCommand            string   `json:"execution_command,omitempty"`
+	AlternativeExecutionCommand string   `json:"alternative_execution_command,omitempty"`
+	MethodRationale             string   `json:"method_rationale,omitempty"`
+	Warnings                    []string `json:"warnings,omitempty"`
+	ClusterWarnings             []string `json:"cluster_warnings,omitempty"`
 	Rollback  jsonRollback   `json:"rollback"`
 	Script       *jsonScript       `json:"generated_script,omitempty"`
 	DiskEstimate *jsonDiskEstimate `json:"disk_space_estimate,omitempty"`
@@ -113,12 +116,15 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 			Type:     string(result.Topology.Type),
 			ReadOnly: result.Topology.ReadOnly,
 		},
-		Risk:             string(result.Risk),
-		Method:           string(result.Method),
-		Recommendation:   result.Recommendation,
-		ExecutionCommand: result.ExecutionCommand,
-		Warnings:         result.Warnings,
-		ClusterWarnings:  result.ClusterWarnings,
+		Risk:                        string(result.Risk),
+		Method:                      string(result.Method),
+		AlternativeMethod:           string(result.AlternativeMethod),
+		Recommendation:              result.Recommendation,
+		ExecutionCommand:            result.ExecutionCommand,
+		AlternativeExecutionCommand: result.AlternativeExecutionCommand,
+		MethodRationale:             result.MethodRationale,
+		Warnings:                    result.Warnings,
+		ClusterWarnings:             result.ClusterWarnings,
 	}
 
 	// Topology details

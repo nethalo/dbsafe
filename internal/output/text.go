@@ -187,10 +187,36 @@ func (r *TextRenderer) renderRecommendation(result *analyzer.Result, width int) 
 }
 
 func (r *TextRenderer) renderExecutionCommand(result *analyzer.Result, width int) {
-	title := TitleStyle.Render("Execution Command")
-	note := MutedText.Render("Ready-to-run command (review and adjust as needed):")
-	content := fmt.Sprintf("%s\n%s\n\n%s", title, note, result.ExecutionCommand)
-	cmdBox := BoxStyle.Width(width).Render(content)
+	title := TitleStyle.Render("Execution Commands")
+	note := MutedText.Render("Ready-to-run commands (review and adjust as needed):")
+
+	var content strings.Builder
+	content.WriteString(title + "\n" + note)
+
+	if result.AlternativeMethod != "" {
+		// Both tools are viable — show primary as Option 1, alternative as Option 2.
+		content.WriteString("\n\n")
+		content.WriteString(SafeText.Render(fmt.Sprintf("Option 1 (Recommended): %s", result.Method)))
+		content.WriteString("\n" + result.ExecutionCommand)
+
+		content.WriteString("\n\n")
+		content.WriteString(MutedText.Render(fmt.Sprintf("Option 2: %s", result.AlternativeMethod)))
+		if result.AlternativeExecutionCommand != "" {
+			content.WriteString("\n" + result.AlternativeExecutionCommand)
+		}
+
+		if result.MethodRationale != "" {
+			content.WriteString("\n\n" + MutedText.Render(result.MethodRationale))
+		}
+	} else {
+		// Single tool (e.g. Galera forces pt-osc).
+		content.WriteString("\n\n" + result.ExecutionCommand)
+		if result.MethodRationale != "" {
+			content.WriteString("\n\n" + MutedText.Render(result.MethodRationale))
+		}
+	}
+
+	cmdBox := BoxStyle.Width(width).Render(content.String())
 	fmt.Fprintln(r.w, cmdBox)
 }
 

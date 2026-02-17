@@ -76,10 +76,25 @@ func (r *PlainRenderer) RenderPlan(result *analyzer.Result) {
 	}
 	fmt.Fprintln(r.w)
 
-	// Execution command (if available)
+	// Execution command(s) (if available)
 	if result.ExecutionCommand != "" {
-		fmt.Fprintf(r.w, "--- Execution Command ---\n")
-		fmt.Fprintf(r.w, "%s\n\n", result.ExecutionCommand)
+		fmt.Fprintf(r.w, "--- Execution Commands ---\n")
+		if result.AlternativeMethod != "" {
+			fmt.Fprintf(r.w, "Option 1 (Recommended): %s\n%s\n\n", result.Method, result.ExecutionCommand)
+			fmt.Fprintf(r.w, "Option 2: %s\n", result.AlternativeMethod)
+			if result.AlternativeExecutionCommand != "" {
+				fmt.Fprintf(r.w, "%s\n", result.AlternativeExecutionCommand)
+			}
+			if result.MethodRationale != "" {
+				fmt.Fprintf(r.w, "\n%s\n", result.MethodRationale)
+			}
+		} else {
+			fmt.Fprintf(r.w, "%s\n", result.ExecutionCommand)
+			if result.MethodRationale != "" {
+				fmt.Fprintf(r.w, "\n%s\n", result.MethodRationale)
+			}
+		}
+		fmt.Fprintln(r.w)
 	}
 
 	// Rollback

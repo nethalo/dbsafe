@@ -19,6 +19,18 @@ const (
 	RiskDangerous RiskLevel = "DANGEROUS"
 )
 
+// ghostPreferredRationale explains why gh-ost is the primary recommendation
+// when both tools are viable (non-Galera topologies).
+const ghostPreferredRationale = "gh-ost (recommended): copies via binlog streaming — no triggers on the production " +
+	"table, supports pause/resume without restarting, provides sub-second lag throttling, and allows a " +
+	"testable cutover before committing.\n" +
+	"pt-online-schema-change: proven trigger-based alternative; simpler setup, no binlog requirements."
+
+// ptOSCOnlyRationale explains why gh-ost cannot be used on Galera/PXC.
+const ptOSCOnlyRationale = "gh-ost is NOT compatible with Galera/PXC: it relies on binlog streaming which " +
+	"conflicts with Galera's writeset replication and will corrupt the cluster. " +
+	"pt-online-schema-change uses triggers that replicate correctly across all Galera nodes."
+
 // ExecutionMethod is what dbsafe recommends.
 type ExecutionMethod string
 
@@ -73,13 +85,16 @@ type Result struct {
 	WriteSetSize  int64 // estimated bytes for write-set
 
 	// Recommendation
-	Risk             RiskLevel
-	Method           ExecutionMethod
-	Recommendation   string
-	ExecutionCommand string   // Generated command for gh-ost or pt-osc
-	Warnings         []string
-	ClusterWarnings  []string
-	DiskEstimate     *DiskSpaceEstimate
+	Risk                       RiskLevel
+	Method                     ExecutionMethod
+	AlternativeMethod          ExecutionMethod // set when both gh-ost and pt-osc are viable
+	Recommendation             string
+	ExecutionCommand           string // Generated command for primary method
+	AlternativeExecutionCommand string // Generated command for alternative method
+	MethodRationale            string // Explains why primary is preferred (or why alternative is excluded)
+	Warnings                   []string
+	ClusterWarnings            []string
+	DiskEstimate               *DiskSpaceEstimate
 
 	// Rollback
 	RollbackSQL     string
@@ -193,16 +208,18 @@ func analyzeDDL(input Input, result *Result) {
 			result.Method = ExecDirect
 		} else {
 			// INPLACE with lock (SHARED or EXCLUSIVE)
-			// Both pt-osc and gh-ost can handle this, so we set pt-osc as method
-			// but recommend both as options. The Galera override (if applicable)
-			// will enforce pt-osc later in applyTopologyWarnings().
+			// Both gh-ost and pt-osc can avoid the lock by copying the table online.
+			// gh-ost is preferred for non-Galera; applyGaleraWarnings() will override
+			// to pt-osc (and clear the alternative) if the topology is Galera.
 			if input.Meta.TotalSize() > 1*1024*1024*1024 { // > 1 GB
 				if result.Risk != RiskDangerous {
 					result.Risk = RiskDangerous
 				}
-				result.Method = ExecPtOSC
+				result.Method = ExecGhost
+				result.AlternativeMethod = ExecPtOSC
+				result.MethodRationale = ghostPreferredRationale
 				if result.Risk == RiskDangerous && result.Recommendation == "" {
-					result.Recommendation = "INPLACE with SHARED lock on a large table. Use pt-online-schema-change or gh-ost to avoid blocking writes."
+					result.Recommendation = "INPLACE with SHARED lock on a large table. Use an online schema change tool to avoid blocking writes."
 				}
 			} else {
 				if result.Risk != RiskDangerous {
@@ -231,13 +248,16 @@ func analyzeDDL(input Input, result *Result) {
 			// we must use pt-online-schema-change (which uses triggers that replicate correctly).
 			if input.Topo.Type == topology.Galera {
 				result.Method = ExecPtOSC
+				result.MethodRationale = ptOSCOnlyRationale
 				if result.Recommendation == "" {
-					result.Recommendation = "COPY algorithm on a large table in Galera/PXC. Use pt-online-schema-change with --max-flow-ctl. Do NOT use gh-ost (incompatible with Galera writeset replication)."
+					result.Recommendation = "COPY algorithm on a large table in Galera/PXC. Use pt-online-schema-change with --max-flow-ctl."
 				}
 			} else {
 				result.Method = ExecGhost
+				result.AlternativeMethod = ExecPtOSC
+				result.MethodRationale = ghostPreferredRationale
 				if result.Recommendation == "" {
-					result.Recommendation = "COPY algorithm on a large table. Use gh-ost (preferred) or pt-online-schema-change to avoid blocking writes."
+					result.Recommendation = "COPY algorithm on a large table. Use an online schema change tool to avoid blocking writes."
 				}
 			}
 		} else {
@@ -249,9 +269,12 @@ func analyzeDDL(input Input, result *Result) {
 		}
 	}
 
-	// Generate executable command for gh-ost or pt-osc
+	// Generate executable command for the primary method, and alternative when both are viable.
 	if result.Method == ExecGhost {
 		result.ExecutionCommand = generateGhostCommand(input)
+		if result.AlternativeMethod == ExecPtOSC {
+			result.AlternativeExecutionCommand = generatePtOSCCommand(input, false)
+		}
 	} else if result.Method == ExecPtOSC {
 		result.ExecutionCommand = generatePtOSCCommand(input, input.Topo.Type == topology.Galera)
 	}
@@ -439,12 +462,16 @@ func applyGaleraWarnings(input Input, result *Result) {
 		))
 	}
 
-	// gh-ost incompatibility
+	// gh-ost incompatibility: override to pt-osc and remove the now-invalid alternative.
 	if result.Method == ExecGhost {
 		result.ClusterWarnings = append(result.ClusterWarnings,
 			"gh-ost is NOT compatible with Galera/PXC. It relies on binlog streaming which conflicts with Galera writeset replication. Use pt-online-schema-change instead.",
 		)
 		result.Method = ExecPtOSC
+		result.AlternativeMethod = ""
+		result.AlternativeExecutionCommand = ""
+		result.MethodRationale = ptOSCOnlyRationale
+		result.ExecutionCommand = generatePtOSCCommand(input, true)
 	}
 }
 
