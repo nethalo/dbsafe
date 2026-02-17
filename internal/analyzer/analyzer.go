@@ -79,6 +79,7 @@ type Result struct {
 	ExecutionCommand string   // Generated command for gh-ost or pt-osc
 	Warnings         []string
 	ClusterWarnings  []string
+	DiskEstimate     *DiskSpaceEstimate
 
 	// Rollback
 	RollbackSQL     string
@@ -97,6 +98,13 @@ type RollbackOption struct {
 	Label       string
 	SQL         string
 	Description string
+}
+
+// DiskSpaceEstimate describes how much additional disk space an operation will need.
+type DiskSpaceEstimate struct {
+	RequiredBytes int64
+	RequiredHuman string
+	Reason        string
 }
 
 // Analyze runs the full analysis pipeline.
@@ -126,6 +134,11 @@ func Analyze(input Input) *Result {
 
 	// Apply topology-specific warnings
 	applyTopologyWarnings(input, result)
+
+	// Compute disk space estimate after method is finalized (topology may override ExecGhost → ExecPtOSC)
+	if result.StatementType == parser.DDL {
+		result.DiskEstimate = estimateDiskSpace(input, result)
+	}
 
 	return result
 }
@@ -589,6 +602,79 @@ END WHILE;
 
 	result.GeneratedScript = script.String()
 	result.ScriptPath = fmt.Sprintf("./dbsafe-plan-%s-%s-%s.sql", table, strings.ToLower(string(input.Parsed.DMLOp)), ts)
+}
+
+// estimateDiskSpace returns the additional disk space needed for a DDL operation,
+// or nil if no significant extra space is required (INSTANT algorithm or table < 100 MB).
+// Must be called after applyTopologyWarnings so that the final Method is reflected.
+func estimateDiskSpace(input Input, result *Result) *DiskSpaceEstimate {
+	const threshold = 100 * 1024 * 1024 // 100 MB
+
+	// INSTANT algorithm needs no extra disk space
+	if result.Classification.Algorithm == AlgoInstant {
+		return nil
+	}
+
+	// gh-ost and pt-osc both create a full shadow table during migration
+	if result.Method == ExecGhost {
+		total := input.Meta.TotalSize()
+		if total < threshold {
+			return nil
+		}
+		return &DiskSpaceEstimate{
+			RequiredBytes: total,
+			RequiredHuman: humanBytes(total),
+			Reason:        "gh-ost creates a full shadow copy of the table during migration",
+		}
+	}
+	if result.Method == ExecPtOSC {
+		total := input.Meta.TotalSize()
+		if total < threshold {
+			return nil
+		}
+		return &DiskSpaceEstimate{
+			RequiredBytes: total,
+			RequiredHuman: humanBytes(total),
+			Reason:        "pt-online-schema-change creates a full shadow copy of the table during migration",
+		}
+	}
+
+	// COPY algorithm executed directly: MySQL builds a temp table copy
+	if result.Classification.Algorithm == AlgoCopy {
+		total := input.Meta.TotalSize()
+		if total < threshold {
+			return nil
+		}
+		return &DiskSpaceEstimate{
+			RequiredBytes: total,
+			RequiredHuman: humanBytes(total),
+			Reason:        "COPY algorithm creates a temporary full table copy during the operation",
+		}
+	}
+
+	// INPLACE with table rebuild: temporary copy is created and swapped in
+	if result.Classification.RebuildsTable {
+		total := input.Meta.TotalSize()
+		if total < threshold {
+			return nil
+		}
+		return &DiskSpaceEstimate{
+			RequiredBytes: total,
+			RequiredHuman: humanBytes(total),
+			Reason:        "INPLACE with table rebuild creates a temporary copy of the table",
+		}
+	}
+
+	// INPLACE without table rebuild (e.g. ADD INDEX): temp sort files for the new index
+	indexLen := input.Meta.IndexLength
+	if indexLen < threshold {
+		return nil
+	}
+	return &DiskSpaceEstimate{
+		RequiredBytes: indexLen,
+		RequiredHuman: humanBytes(indexLen),
+		Reason:        "INPLACE index build requires temporary space proportional to the new index size",
+	}
 }
 
 func humanBytes(b int64) string {

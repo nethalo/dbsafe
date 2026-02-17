@@ -98,6 +98,9 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintf(r.w, "## %s Recommendation: %s\n\n", riskEmoji[result.Risk], result.Risk)
 	fmt.Fprintf(r.w, "**Method:** %s\n\n", result.Method)
 	fmt.Fprintf(r.w, "%s\n\n", result.Recommendation)
+	if result.DiskEstimate != nil {
+		fmt.Fprintf(r.w, "> **Disk space required:** ~%s\n> %s\n\n", result.DiskEstimate.RequiredHuman, result.DiskEstimate.Reason)
+	}
 
 	// Execution command (if available)
 	if result.ExecutionCommand != "" {

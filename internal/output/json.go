@@ -32,7 +32,8 @@ type jsonPlanOutput struct {
 	Warnings         []string `json:"warnings,omitempty"`
 	ClusterWarnings  []string `json:"cluster_warnings,omitempty"`
 	Rollback  jsonRollback   `json:"rollback"`
-	Script    *jsonScript    `json:"generated_script,omitempty"`
+	Script       *jsonScript       `json:"generated_script,omitempty"`
+	DiskEstimate *jsonDiskEstimate `json:"disk_space_estimate,omitempty"`
 }
 
 type jsonTableMeta struct {
@@ -84,6 +85,12 @@ type jsonRollbackOption struct {
 
 type jsonScript struct {
 	Path string `json:"path"`
+}
+
+type jsonDiskEstimate struct {
+	RequiredBytes int64  `json:"required_bytes"`
+	RequiredHuman string `json:"required_human"`
+	Reason        string `json:"reason"`
 }
 
 func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
@@ -160,6 +167,14 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 
 	if result.GeneratedScript != "" {
 		out.Script = &jsonScript{Path: result.ScriptPath}
+	}
+
+	if result.DiskEstimate != nil {
+		out.DiskEstimate = &jsonDiskEstimate{
+			RequiredBytes: result.DiskEstimate.RequiredBytes,
+			RequiredHuman: result.DiskEstimate.RequiredHuman,
+			Reason:        result.DiskEstimate.Reason,
+		}
 	}
 
 	enc := json.NewEncoder(r.w)

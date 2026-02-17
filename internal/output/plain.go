@@ -70,7 +70,11 @@ func (r *PlainRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintf(r.w, "--- Recommendation ---\n")
 	fmt.Fprintf(r.w, "Risk:          %s\n", result.Risk)
 	fmt.Fprintf(r.w, "Method:        %s\n", result.Method)
-	fmt.Fprintf(r.w, "%s\n\n", result.Recommendation)
+	fmt.Fprintf(r.w, "%s\n", result.Recommendation)
+	if result.DiskEstimate != nil {
+		fmt.Fprintf(r.w, "Disk required: ~%s (%s)\n", result.DiskEstimate.RequiredHuman, result.DiskEstimate.Reason)
+	}
+	fmt.Fprintln(r.w)
 
 	// Execution command (if available)
 	if result.ExecutionCommand != "" {

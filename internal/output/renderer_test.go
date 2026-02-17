@@ -102,6 +102,22 @@ func dmlResultWithWarnings() *analyzer.Result {
 	return r
 }
 
+func ddlResultWithDiskEstimate() *analyzer.Result {
+	r := ddlResult()
+	// Simulate a large-table COPY operation that needs disk space
+	r.Classification.Algorithm = analyzer.AlgoCopy
+	r.Classification.RebuildsTable = true
+	r.Risk = analyzer.RiskDangerous
+	r.Method = analyzer.ExecGhost
+	r.Recommendation = "COPY algorithm on a large table. Use gh-ost."
+	r.DiskEstimate = &analyzer.DiskSpaceEstimate{
+		RequiredBytes: 2 * 1024 * 1024 * 1024,
+		RequiredHuman: "2.0 GB",
+		Reason:        "gh-ost creates a full shadow copy of the table during migration",
+	}
+	return r
+}
+
 func galeraResult() *analyzer.Result {
 	r := ddlResult()
 	r.Topology = &topology.Info{
@@ -273,6 +289,34 @@ func TestPlainRenderer_RenderPlan_ScriptPath(t *testing.T) {
 
 	if !strings.Contains(out, "Script written to: ./dbsafe-plan-logs-delete.sql") {
 		t.Error("plain output missing script path")
+	}
+}
+
+func TestPlainRenderer_RenderPlan_DiskEstimate_Shown(t *testing.T) {
+	var buf bytes.Buffer
+	r := &PlainRenderer{w: &buf}
+	r.RenderPlan(ddlResultWithDiskEstimate())
+	out := buf.String()
+
+	if !strings.Contains(out, "Disk required:") {
+		t.Error("plain output missing 'Disk required:' label")
+	}
+	if !strings.Contains(out, "2.0 GB") {
+		t.Error("plain output missing disk size '2.0 GB'")
+	}
+	if !strings.Contains(out, "gh-ost") {
+		t.Error("plain output missing disk reason mentioning gh-ost")
+	}
+}
+
+func TestPlainRenderer_RenderPlan_DiskEstimate_Absent_ForInstant(t *testing.T) {
+	var buf bytes.Buffer
+	r := &PlainRenderer{w: &buf}
+	r.RenderPlan(ddlResult()) // INSTANT, DiskEstimate is nil
+	out := buf.String()
+
+	if strings.Contains(out, "Disk required:") {
+		t.Error("plain output should NOT show disk estimate for INSTANT algorithm")
 	}
 }
 
@@ -529,6 +573,44 @@ func TestJSONRenderer_RenderPlan_GaleraTopology(t *testing.T) {
 	}
 }
 
+func TestJSONRenderer_RenderPlan_DiskEstimate_Shown(t *testing.T) {
+	var buf bytes.Buffer
+	r := &JSONRenderer{w: &buf}
+	r.RenderPlan(ddlResultWithDiskEstimate())
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	disk, ok := out["disk_space_estimate"].(map[string]interface{})
+	if !ok {
+		t.Fatal("disk_space_estimate key missing or wrong type in JSON output")
+	}
+	if disk["required_human"] != "2.0 GB" {
+		t.Errorf("required_human = %v, want '2.0 GB'", disk["required_human"])
+	}
+	if disk["required_bytes"] != float64(2*1024*1024*1024) {
+		t.Errorf("required_bytes = %v, want %d", disk["required_bytes"], 2*1024*1024*1024)
+	}
+	if !strings.Contains(disk["reason"].(string), "gh-ost") {
+		t.Errorf("reason should mention gh-ost, got: %v", disk["reason"])
+	}
+}
+
+func TestJSONRenderer_RenderPlan_DiskEstimate_OmittedWhenNil(t *testing.T) {
+	var buf bytes.Buffer
+	r := &JSONRenderer{w: &buf}
+	r.RenderPlan(ddlResult()) // INSTANT, DiskEstimate is nil
+
+	var out map[string]interface{}
+	json.Unmarshal(buf.Bytes(), &out)
+
+	if _, ok := out["disk_space_estimate"]; ok {
+		t.Error("disk_space_estimate should be omitted when DiskEstimate is nil")
+	}
+}
+
 func TestJSONRenderer_RenderPlan_ValidJSON(t *testing.T) {
 	// Ensure all result types produce valid JSON
 	results := []*analyzer.Result{ddlResult(), dmlResult(), dmlResultWithWarnings(), galeraResult()}
@@ -693,6 +775,34 @@ func TestMarkdownRenderer_RenderPlan_NoTopologyForStandalone(t *testing.T) {
 	}
 }
 
+func TestMarkdownRenderer_RenderPlan_DiskEstimate_Shown(t *testing.T) {
+	var buf bytes.Buffer
+	r := &MarkdownRenderer{w: &buf}
+	r.RenderPlan(ddlResultWithDiskEstimate())
+	out := buf.String()
+
+	if !strings.Contains(out, "**Disk space required:**") {
+		t.Error("markdown output missing '**Disk space required:**' label")
+	}
+	if !strings.Contains(out, "2.0 GB") {
+		t.Error("markdown output missing disk size '2.0 GB'")
+	}
+	if !strings.Contains(out, "gh-ost") {
+		t.Error("markdown output missing disk reason mentioning gh-ost")
+	}
+}
+
+func TestMarkdownRenderer_RenderPlan_DiskEstimate_Absent_ForInstant(t *testing.T) {
+	var buf bytes.Buffer
+	r := &MarkdownRenderer{w: &buf}
+	r.RenderPlan(ddlResult()) // INSTANT, DiskEstimate is nil
+	out := buf.String()
+
+	if strings.Contains(out, "Disk space required") {
+		t.Error("markdown output should NOT show disk estimate for INSTANT algorithm")
+	}
+}
+
 func TestMarkdownRenderer_RenderPlan_RiskEmoji(t *testing.T) {
 	tests := []struct {
 		risk  analyzer.RiskLevel
@@ -792,6 +902,31 @@ func TestTextRenderer_RenderPlan_DML(t *testing.T) {
 		if !strings.Contains(out, e) {
 			t.Errorf("text DML output missing %q", e)
 		}
+	}
+}
+
+func TestTextRenderer_RenderPlan_DiskEstimate_Shown(t *testing.T) {
+	var buf bytes.Buffer
+	r := &TextRenderer{w: &buf}
+	r.RenderPlan(ddlResultWithDiskEstimate())
+	out := buf.String()
+
+	if !strings.Contains(out, "Disk required:") {
+		t.Error("text output missing 'Disk required:' label")
+	}
+	if !strings.Contains(out, "2.0 GB") {
+		t.Error("text output missing disk size '2.0 GB'")
+	}
+}
+
+func TestTextRenderer_RenderPlan_DiskEstimate_Absent_ForInstant(t *testing.T) {
+	var buf bytes.Buffer
+	r := &TextRenderer{w: &buf}
+	r.RenderPlan(ddlResult()) // INSTANT, DiskEstimate is nil
+	out := buf.String()
+
+	if strings.Contains(out, "Disk required:") {
+		t.Error("text output should NOT show disk estimate for INSTANT algorithm")
 	}
 }
 

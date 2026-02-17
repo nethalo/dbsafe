@@ -805,6 +805,111 @@ func TestAnalyze_DatabaseFallback(t *testing.T) {
 }
 
 // =============================================================
+// Disk Space Estimate Tests
+// =============================================================
+
+func TestDiskEstimate_Instant_Nil(t *testing.T) {
+	// ADD COLUMN on 8.0.35 → INSTANT → no disk estimate regardless of size
+	input := ddlInput(parser.AddColumn, v8_0_35, 2*1024*1024*1024, topology.Standalone) // 2 GB
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInstant {
+		t.Fatalf("expected INSTANT algorithm, got %s", result.Classification.Algorithm)
+	}
+	if result.DiskEstimate != nil {
+		t.Errorf("DiskEstimate should be nil for INSTANT algorithm, got: %+v", result.DiskEstimate)
+	}
+}
+
+func TestDiskEstimate_Copy_LargeTable(t *testing.T) {
+	// MODIFY COLUMN → COPY on 2 GB table → disk estimate ≈ table size
+	input := ddlInput(parser.ModifyColumn, v8_0_35, 2*1024*1024*1024, topology.Standalone)
+	result := Analyze(input)
+
+	if result.DiskEstimate == nil {
+		t.Fatal("DiskEstimate should not be nil for COPY on large table")
+	}
+	wantBytes := input.Meta.TotalSize()
+	if result.DiskEstimate.RequiredBytes != wantBytes {
+		t.Errorf("RequiredBytes = %d, want %d", result.DiskEstimate.RequiredBytes, wantBytes)
+	}
+	if result.DiskEstimate.RequiredHuman == "" {
+		t.Error("RequiredHuman should not be empty")
+	}
+	if result.DiskEstimate.Reason == "" {
+		t.Error("Reason should not be empty")
+	}
+}
+
+func TestDiskEstimate_Copy_SmallTable_Nil(t *testing.T) {
+	// MODIFY COLUMN → COPY on 50 MB table → below 100 MB threshold → nil
+	input := ddlInput(parser.ModifyColumn, v8_0_35, 50*1024*1024, topology.Standalone)
+	result := Analyze(input)
+
+	if result.DiskEstimate != nil {
+		t.Errorf("DiskEstimate should be nil for COPY on small table (<100MB), got: %+v", result.DiskEstimate)
+	}
+}
+
+func TestDiskEstimate_Ghost_MentionsGhost(t *testing.T) {
+	// MODIFY COLUMN → COPY on 2 GB non-Galera → gh-ost method → reason mentions "gh-ost"
+	input := ddlInput(parser.ModifyColumn, v8_0_35, 2*1024*1024*1024, topology.Standalone)
+	result := Analyze(input)
+
+	if result.Method != ExecGhost {
+		t.Fatalf("expected ExecGhost, got %s", result.Method)
+	}
+	if result.DiskEstimate == nil {
+		t.Fatal("DiskEstimate should not be nil")
+	}
+	if !containsStr(result.DiskEstimate.Reason, "gh-ost") {
+		t.Errorf("Reason should mention gh-ost, got: %s", result.DiskEstimate.Reason)
+	}
+}
+
+func TestDiskEstimate_PtOSC_Galera_MentionsPtOSC(t *testing.T) {
+	// MODIFY COLUMN → COPY on 2 GB Galera → pt-osc method → reason mentions "pt-online-schema-change"
+	input := ddlInput(parser.ModifyColumn, v8_0_35, 2*1024*1024*1024, topology.Galera)
+	result := Analyze(input)
+
+	if result.Method != ExecPtOSC {
+		t.Fatalf("expected ExecPtOSC, got %s", result.Method)
+	}
+	if result.DiskEstimate == nil {
+		t.Fatal("DiskEstimate should not be nil")
+	}
+	if !containsStr(result.DiskEstimate.Reason, "pt-online-schema-change") {
+		t.Errorf("Reason should mention pt-online-schema-change, got: %s", result.DiskEstimate.Reason)
+	}
+}
+
+func TestDiskEstimate_Inplace_NoRebuild_LargeIndexLength(t *testing.T) {
+	// ADD INDEX on 11 GB table → INPLACE, no rebuild → disk estimate ≈ IndexLength
+	input := ddlInput(parser.AddIndex, v8_0_35, 11*1024*1024*1024, topology.Standalone)
+	result := Analyze(input)
+
+	if result.Classification.RebuildsTable {
+		t.Fatal("AddIndex should not rebuild table")
+	}
+	if result.DiskEstimate == nil {
+		t.Fatal("DiskEstimate should not be nil for large INPLACE index build")
+	}
+	if result.DiskEstimate.RequiredBytes != input.Meta.IndexLength {
+		t.Errorf("RequiredBytes = %d, want IndexLength %d", result.DiskEstimate.RequiredBytes, input.Meta.IndexLength)
+	}
+}
+
+func TestDiskEstimate_DML_Nil(t *testing.T) {
+	// DELETE on large table → DML → never gets disk estimate
+	input := dmlInput(parser.Delete, false, 500000, 200, 10000, topology.Standalone)
+	result := Analyze(input)
+
+	if result.DiskEstimate != nil {
+		t.Errorf("DiskEstimate should always be nil for DML, got: %+v", result.DiskEstimate)
+	}
+}
+
+// =============================================================
 // Utility Tests
 // =============================================================
 

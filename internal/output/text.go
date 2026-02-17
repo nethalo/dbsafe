@@ -173,7 +173,15 @@ func (r *TextRenderer) renderRecommendation(result *analyzer.Result, width int) 
 	}
 
 	title := TitleStyle.Render("Recommendation")
-	content := fmt.Sprintf("%s\n%s %s\n\n%s\n\nMethod: %s", title, icon, label, result.Recommendation, result.Method)
+	diskLine := ""
+	if result.DiskEstimate != nil {
+		diskLine = fmt.Sprintf("\n\n%s ~%s\n%s",
+			WarningText.Render("Disk required:"),
+			result.DiskEstimate.RequiredHuman,
+			MutedText.Render(result.DiskEstimate.Reason),
+		)
+	}
+	content := fmt.Sprintf("%s\n%s %s\n\n%s%s\n\nMethod: %s", title, icon, label, result.Recommendation, diskLine, result.Method)
 	recBox := style.Width(width).Render(content)
 	fmt.Fprintln(r.w, recBox)
 }
