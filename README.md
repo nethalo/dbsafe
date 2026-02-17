@@ -44,9 +44,25 @@
 
 ### Download Pre-built Binary (Recommended)
 
-**Option 1: Download from [Releases page](https://github.com/nethalo/dbsafe/releases/latest)** (easiest)
+**Option 1: One-liner install** (auto-detects OS/arch, verifies checksum, installs latest):
 
-**Option 2: Using curl** (replace `VERSION` with latest release, e.g., `0.1.2`):
+```bash
+curl -sSfL https://raw.githubusercontent.com/nethalo/dbsafe/main/install.sh | sh -s -- -b /usr/local/bin
+```
+
+Install a specific version or to a custom directory:
+
+```bash
+# Specific version
+curl -sSfL https://raw.githubusercontent.com/nethalo/dbsafe/main/install.sh | sh -s -- -b /usr/local/bin v0.2.1
+
+# Current directory (./bin/dbsafe)
+curl -sSfL https://raw.githubusercontent.com/nethalo/dbsafe/main/install.sh | sh
+```
+
+**Option 2: Download from [Releases page](https://github.com/nethalo/dbsafe/releases/latest)** (manual)
+
+**Option 3: Using curl** (specific version):
 
 ```bash
 # Set version
