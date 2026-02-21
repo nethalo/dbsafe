@@ -147,8 +147,13 @@ dbsafe plan "ALTER TABLE users ADD COLUMN email VARCHAR(255)"
 - ✅ `CHANGE COLUMN` - Column renames with type changes
 - ✅ `ADD INDEX` - Algorithm detection, size warnings
 - ✅ `DROP INDEX` - Safety checks
+- ✅ `ADD/DROP PRIMARY KEY` - Full table rebuild warning (InnoDB clustered index)
 - ✅ `ADD/DROP FOREIGN KEY` - Locking behavior
 - ✅ `CHANGE CHARSET` - Full table rebuild warnings
+- ✅ `CHANGE ENGINE` - Full table rebuild warnings
+- ✅ `CHANGE ROW FORMAT` - INPLACE with table rebuild, concurrent DML allowed
+- ✅ `SET/DROP DEFAULT` - Metadata-only, instant
+- ✅ `ADD/DROP PARTITION` - INPLACE, no rebuild
 - ✅ `RENAME TABLE` - Metadata-only confirmation
 
 **MySQL Version Matrix:**
