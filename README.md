@@ -55,7 +55,7 @@ Install a specific version or to a custom directory:
 
 ```bash
 # Specific version
-curl -sSfL https://raw.githubusercontent.com/nethalo/dbsafe/main/install.sh | sh -s -- -b /usr/local/bin v0.2.1
+curl -sSfL https://raw.githubusercontent.com/nethalo/dbsafe/main/install.sh | sh -s -- -b /usr/local/bin v0.2.8
 
 # Current directory (./bin/dbsafe)
 curl -sSfL https://raw.githubusercontent.com/nethalo/dbsafe/main/install.sh | sh
@@ -67,7 +67,7 @@ curl -sSfL https://raw.githubusercontent.com/nethalo/dbsafe/main/install.sh | sh
 
 ```bash
 # Set version
-VERSION=0.2.6
+VERSION=0.2.8
 
 # macOS (Apple Silicon)
 curl -L https://github.com/nethalo/dbsafe/releases/download/v${VERSION}/dbsafe_${VERSION}_darwin_arm64.tar.gz | tar xz

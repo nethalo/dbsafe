@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-02-21
+
+### Fixed
+- gh-ost is no longer suggested for tables with existing triggers; pt-online-schema-change (with `--preserve-triggers`) is recommended instead (#17)
+
 ## [0.2.7] - 2026-02-21
 
 ### Added
@@ -155,6 +160,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - Output formats: text, plain, JSON, markdown
 - GoReleaser config and GitHub Actions release workflow
 
+[0.2.8]: https://github.com/nethalo/dbsafe/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/nethalo/dbsafe/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/nethalo/dbsafe/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/nethalo/dbsafe/compare/v0.2.4...v0.2.5
