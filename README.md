@@ -8,6 +8,7 @@
 
 <p align="center">
 	<a href="https://github.com/nethalo/dbsafe/releases"><img src="https://img.shields.io/github/v/release/nethalo/dbsafe?style=flat-square" alt="Latest Release"></a>
+	<a href="https://github.com/nethalo/dbsafe/releases"><img src="https://img.shields.io/github/downloads/nethalo/dbsafe/total?style=flat-square" alt="Downloads"></a>
 	<a href="https://github.com/nethalo/dbsafe/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square" alt="License"></a>
 </p>
 
