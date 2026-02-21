@@ -212,9 +212,9 @@ func BenchmarkGenerateChunkedScript(b *testing.B) {
 
 func BenchmarkClassifyDDLWithContext_AddColumn(b *testing.B) {
 	parsed := &parser.ParsedSQL{
-		Type:   parser.DDL,
-		DDLOp:  parser.AddColumn,
-		Table:  "users",
+		Type:  parser.DDL,
+		DDLOp: parser.AddColumn,
+		Table: "users",
 	}
 
 	b.ResetTimer()

@@ -72,10 +72,10 @@ func TestExtractAlterSpec(t *testing.T) {
 
 func TestGenerateGhostCommand(t *testing.T) {
 	tests := []struct {
-		name          string
-		input         Input
-		wantContains  []string
-		wantNotEmpty  bool
+		name         string
+		input        Input
+		wantContains []string
+		wantNotEmpty bool
 	}{
 		{
 			name: "basic ALTER with TCP connection",

@@ -35,11 +35,11 @@ const ptOSCOnlyRationale = "gh-ost is NOT compatible with Galera/PXC: it relies 
 type ExecutionMethod string
 
 const (
-	ExecDirect     ExecutionMethod = "DIRECT"
-	ExecGhost      ExecutionMethod = "GH-OST"
-	ExecPtOSC      ExecutionMethod = "PT-ONLINE-SCHEMA-CHANGE"
-	ExecChunked    ExecutionMethod = "CHUNKED"
-	ExecRSU        ExecutionMethod = "RSU" // Rolling Schema Upgrade (Galera)
+	ExecDirect  ExecutionMethod = "DIRECT"
+	ExecGhost   ExecutionMethod = "GH-OST"
+	ExecPtOSC   ExecutionMethod = "PT-ONLINE-SCHEMA-CHANGE"
+	ExecChunked ExecutionMethod = "CHUNKED"
+	ExecRSU     ExecutionMethod = "RSU" // Rolling Schema Upgrade (Galera)
 )
 
 // ConnectionInfo holds non-sensitive connection details for command generation.
@@ -78,23 +78,23 @@ type Result struct {
 	Classification DDLClassification
 
 	// DML-specific
-	DMLOp         parser.DMLOperation
-	AffectedRows  int64
-	AffectedPct   float64
-	HasWhere      bool
-	WriteSetSize  int64 // estimated bytes for write-set
+	DMLOp        parser.DMLOperation
+	AffectedRows int64
+	AffectedPct  float64
+	HasWhere     bool
+	WriteSetSize int64 // estimated bytes for write-set
 
 	// Recommendation
-	Risk                       RiskLevel
-	Method                     ExecutionMethod
-	AlternativeMethod          ExecutionMethod // set when both gh-ost and pt-osc are viable
-	Recommendation             string
-	ExecutionCommand           string // Generated command for primary method
+	Risk                        RiskLevel
+	Method                      ExecutionMethod
+	AlternativeMethod           ExecutionMethod // set when both gh-ost and pt-osc are viable
+	Recommendation              string
+	ExecutionCommand            string // Generated command for primary method
 	AlternativeExecutionCommand string // Generated command for alternative method
-	MethodRationale            string // Explains why primary is preferred (or why alternative is excluded)
-	Warnings                   []string
-	ClusterWarnings            []string
-	DiskEstimate               *DiskSpaceEstimate
+	MethodRationale             string // Explains why primary is preferred (or why alternative is excluded)
+	Warnings                    []string
+	ClusterWarnings             []string
+	DiskEstimate                *DiskSpaceEstimate
 
 	// Rollback
 	RollbackSQL     string

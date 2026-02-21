@@ -9,8 +9,8 @@ import (
 
 func TestTableMetadata_TotalSize(t *testing.T) {
 	meta := &TableMetadata{
-		DataLength:  1024 * 1024 * 100,  // 100 MB
-		IndexLength: 1024 * 1024 * 50,   // 50 MB
+		DataLength:  1024 * 1024 * 100, // 100 MB
+		IndexLength: 1024 * 1024 * 50,  // 50 MB
 	}
 
 	want := int64(1024 * 1024 * 150) // 150 MB

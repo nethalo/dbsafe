@@ -9,14 +9,14 @@ import (
 
 func TestParseVersion(t *testing.T) {
 	tests := []struct {
-		name          string
-		raw           string
-		wantMajor     int
-		wantMinor     int
-		wantPatch     int
-		wantFlavor    string
-		wantIsLTS     bool
-		wantErr       bool
+		name       string
+		raw        string
+		wantMajor  int
+		wantMinor  int
+		wantPatch  int
+		wantFlavor string
+		wantIsLTS  bool
+		wantErr    bool
 	}{
 		{
 			name:       "MySQL 8.0.35",
@@ -142,46 +142,46 @@ func TestServerVersion_AtLeast(t *testing.T) {
 
 func TestServerVersion_FeatureSupport(t *testing.T) {
 	tests := []struct {
-		name                      string
-		version                   ServerVersion
-		wantInstantAdd            bool
-		wantInstantAnyPos         bool
-		wantInstantDrop           bool
+		name              string
+		version           ServerVersion
+		wantInstantAdd    bool
+		wantInstantAnyPos bool
+		wantInstantDrop   bool
 	}{
 		{
-			name:            "8.0.5 - old version",
-			version:         ServerVersion{Major: 8, Minor: 0, Patch: 5},
-			wantInstantAdd:  false,
+			name:              "8.0.5 - old version",
+			version:           ServerVersion{Major: 8, Minor: 0, Patch: 5},
+			wantInstantAdd:    false,
 			wantInstantAnyPos: false,
-			wantInstantDrop: false,
+			wantInstantDrop:   false,
 		},
 		{
-			name:            "8.0.12 - instant add only",
-			version:         ServerVersion{Major: 8, Minor: 0, Patch: 12},
-			wantInstantAdd:  true,
+			name:              "8.0.12 - instant add only",
+			version:           ServerVersion{Major: 8, Minor: 0, Patch: 12},
+			wantInstantAdd:    true,
 			wantInstantAnyPos: false,
-			wantInstantDrop: false,
+			wantInstantDrop:   false,
 		},
 		{
-			name:            "8.0.28 - just before any position",
-			version:         ServerVersion{Major: 8, Minor: 0, Patch: 28},
-			wantInstantAdd:  true,
+			name:              "8.0.28 - just before any position",
+			version:           ServerVersion{Major: 8, Minor: 0, Patch: 28},
+			wantInstantAdd:    true,
 			wantInstantAnyPos: false,
-			wantInstantDrop: false,
+			wantInstantDrop:   false,
 		},
 		{
-			name:            "8.0.29 - all instant features",
-			version:         ServerVersion{Major: 8, Minor: 0, Patch: 29},
-			wantInstantAdd:  true,
+			name:              "8.0.29 - all instant features",
+			version:           ServerVersion{Major: 8, Minor: 0, Patch: 29},
+			wantInstantAdd:    true,
 			wantInstantAnyPos: true,
-			wantInstantDrop: true,
+			wantInstantDrop:   true,
 		},
 		{
-			name:            "8.4.0 - latest LTS",
-			version:         ServerVersion{Major: 8, Minor: 4, Patch: 0},
-			wantInstantAdd:  true,
+			name:              "8.4.0 - latest LTS",
+			version:           ServerVersion{Major: 8, Minor: 4, Patch: 0},
+			wantInstantAdd:    true,
 			wantInstantAnyPos: true,
-			wantInstantDrop: true,
+			wantInstantDrop:   true,
 		},
 	}
 

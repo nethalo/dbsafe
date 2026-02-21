@@ -10,12 +10,12 @@ import (
 
 // ServerVersion represents a parsed MySQL version.
 type ServerVersion struct {
-	Raw      string // e.g. "8.0.35-27-Percona XtraDB Cluster"
-	Major    int    // 8
-	Minor    int    // 0
-	Patch    int    // 35
-	Flavor   string // "mysql", "percona", "percona-xtradb-cluster"
-	IsLTS    bool   // true for 8.4.x
+	Raw    string // e.g. "8.0.35-27-Percona XtraDB Cluster"
+	Major  int    // 8
+	Minor  int    // 0
+	Patch  int    // 35
+	Flavor string // "mysql", "percona", "percona-xtradb-cluster"
+	IsLTS  bool   // true for 8.4.x
 }
 
 // String returns a human-readable version string.

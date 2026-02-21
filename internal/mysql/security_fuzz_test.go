@@ -82,9 +82,9 @@ func FuzzEscapeIdentifier(f *testing.F) {
 		"```",
 		"normal_name",
 		"123_table",
-		"täble", // Unicode
+		"täble",         // Unicode
 		"table\x00name", // Null byte
-		"table\nname", // Newline
+		"table\nname",   // Newline
 		"very_long_table_name_with_many_characters_that_exceeds_normal_limits",
 	}
 

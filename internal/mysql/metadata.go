@@ -12,9 +12,9 @@ type TableMetadata struct {
 	Table         string
 	Engine        string
 	RowCount      int64
-	DataLength    int64  // bytes
-	IndexLength   int64  // bytes
-	AvgRowLength  int64  // bytes
+	DataLength    int64 // bytes
+	IndexLength   int64 // bytes
+	AvgRowLength  int64 // bytes
 	AutoIncrement int64
 	RowFormat     string
 	CreateTable   string // full CREATE TABLE statement

@@ -137,11 +137,11 @@ func TestGenerateDDLRollback(t *testing.T) {
 
 func TestGenerateDMLRollback(t *testing.T) {
 	tests := []struct {
-		name                 string
-		input                Input
-		wantRollbackOptions  int
-		wantBackupSQL        bool
-		wantBinlogOption     bool
+		name                string
+		input               Input
+		wantRollbackOptions int
+		wantBackupSQL       bool
+		wantBinlogOption    bool
 	}{
 		{
 			name: "DELETE with WHERE clause",

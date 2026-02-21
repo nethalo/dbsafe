@@ -33,12 +33,12 @@ func TestDetectGalera(t *testing.T) {
 			expectedSize:      3,
 		},
 		{
-			name:              "PXC cluster with 3 nodes (fallback to variable)",
-			wsrepOn:           "ON",
-			clusterStatusErr:  sql.ErrNoRows,
-			clusterSizeVar:    "3",
-			expectedDetected:  true,
-			expectedSize:      3,
+			name:             "PXC cluster with 3 nodes (fallback to variable)",
+			wsrepOn:          "ON",
+			clusterStatusErr: sql.ErrNoRows,
+			clusterSizeVar:   "3",
+			expectedDetected: true,
+			expectedSize:     3,
 		},
 		{
 			name:             "wsrep_on is OFF",

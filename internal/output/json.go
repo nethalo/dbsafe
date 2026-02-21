@@ -22,21 +22,21 @@ type jsonPlanOutput struct {
 	Table     string `json:"table"`
 	Version   string `json:"mysql_version"`
 
-	TableMeta jsonTableMeta  `json:"table_metadata"`
-	Topology  jsonTopology   `json:"topology"`
-	Operation jsonOperation  `json:"operation"`
-	Risk                        string   `json:"risk"`
-	Method                      string   `json:"recommended_method"`
-	AlternativeMethod           string   `json:"alternative_method,omitempty"`
-	Recommendation              string   `json:"recommendation"`
-	ExecutionCommand            string   `json:"execution_command,omitempty"`
-	AlternativeExecutionCommand string   `json:"alternative_execution_command,omitempty"`
-	MethodRationale             string   `json:"method_rationale,omitempty"`
-	Warnings                    []string `json:"warnings,omitempty"`
-	ClusterWarnings             []string `json:"cluster_warnings,omitempty"`
-	Rollback  jsonRollback   `json:"rollback"`
-	Script       *jsonScript       `json:"generated_script,omitempty"`
-	DiskEstimate *jsonDiskEstimate `json:"disk_space_estimate,omitempty"`
+	TableMeta                   jsonTableMeta     `json:"table_metadata"`
+	Topology                    jsonTopology      `json:"topology"`
+	Operation                   jsonOperation     `json:"operation"`
+	Risk                        string            `json:"risk"`
+	Method                      string            `json:"recommended_method"`
+	AlternativeMethod           string            `json:"alternative_method,omitempty"`
+	Recommendation              string            `json:"recommendation"`
+	ExecutionCommand            string            `json:"execution_command,omitempty"`
+	AlternativeExecutionCommand string            `json:"alternative_execution_command,omitempty"`
+	MethodRationale             string            `json:"method_rationale,omitempty"`
+	Warnings                    []string          `json:"warnings,omitempty"`
+	ClusterWarnings             []string          `json:"cluster_warnings,omitempty"`
+	Rollback                    jsonRollback      `json:"rollback"`
+	Script                      *jsonScript       `json:"generated_script,omitempty"`
+	DiskEstimate                *jsonDiskEstimate `json:"disk_space_estimate,omitempty"`
 }
 
 type jsonTableMeta struct {
@@ -75,8 +75,8 @@ type jsonOperation struct {
 }
 
 type jsonRollback struct {
-	SQL     string              `json:"sql,omitempty"`
-	Notes   string              `json:"notes,omitempty"`
+	SQL     string               `json:"sql,omitempty"`
+	Notes   string               `json:"notes,omitempty"`
 	Options []jsonRollbackOption `json:"options,omitempty"`
 }
 
@@ -190,11 +190,11 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 
 func (r *JSONRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topology.Info) {
 	out := map[string]interface{}{
-		"host":         conn.Host,
-		"port":         conn.Port,
-		"version":      topo.Version.String(),
-		"topology":     string(topo.Type),
-		"read_only":    topo.ReadOnly,
+		"host":      conn.Host,
+		"port":      conn.Port,
+		"version":   topo.Version.String(),
+		"topology":  string(topo.Type),
+		"read_only": topo.ReadOnly,
 	}
 
 	switch topo.Type {

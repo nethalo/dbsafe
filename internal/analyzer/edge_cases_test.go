@@ -361,8 +361,8 @@ func TestApplyTopologyWarnings_GaleraWriteSetExceeds(t *testing.T) {
 			DMLOp: parser.Update,
 		},
 		Topo: &topology.Info{
-			Type:            topology.Galera,
-			WsrepMaxWsSize:  10 * 1024 * 1024, // 10 MB limit
+			Type:              topology.Galera,
+			WsrepMaxWsSize:    10 * 1024 * 1024, // 10 MB limit
 			GaleraClusterSize: 3,
 		},
 	}
@@ -434,8 +434,8 @@ func TestApplyTopologyWarnings_GroupReplicationLimit(t *testing.T) {
 			DMLOp: parser.Delete,
 		},
 		Topo: &topology.Info{
-			Type:                topology.GroupRepl,
-			GRTransactionLimit:  50 * 1024 * 1024, // 50 MB
+			Type:               topology.GroupRepl,
+			GRTransactionLimit: 50 * 1024 * 1024, // 50 MB
 		},
 	}
 

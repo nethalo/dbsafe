@@ -6,10 +6,10 @@ import "github.com/nethalo/dbsafe/internal/parser"
 type Algorithm string
 
 const (
-	AlgoInstant  Algorithm = "INSTANT"
-	AlgoInplace  Algorithm = "INPLACE"
-	AlgoCopy     Algorithm = "COPY"
-	AlgoDepends  Algorithm = "DEPENDS" // varies by specifics
+	AlgoInstant Algorithm = "INSTANT"
+	AlgoInplace Algorithm = "INPLACE"
+	AlgoCopy    Algorithm = "COPY"
+	AlgoDepends Algorithm = "DEPENDS" // varies by specifics
 )
 
 // LockLevel represents what lock MySQL requires during the operation.
@@ -34,10 +34,10 @@ type DDLClassification struct {
 type VersionRange int
 
 const (
-	V8_0_Early  VersionRange = iota // 8.0.0 – 8.0.11
-	V8_0_Instant                    // 8.0.12 – 8.0.28 (INSTANT for trailing ADD COLUMN)
-	V8_0_Full                       // 8.0.29+ (expanded INSTANT)
-	V8_4_LTS                        // 8.4.x LTS
+	V8_0_Early   VersionRange = iota // 8.0.0 – 8.0.11
+	V8_0_Instant                     // 8.0.12 – 8.0.28 (INSTANT for trailing ADD COLUMN)
+	V8_0_Full                        // 8.0.29+ (expanded INSTANT)
+	V8_4_LTS                         // 8.4.x LTS
 )
 
 // classifyVersion maps a parsed version to a matrix range.
@@ -60,8 +60,8 @@ func classifyVersion(major, minor, patch int) VersionRange {
 
 // matrixKey combines operation + version range for lookup.
 type matrixKey struct {
-	Op       parser.DDLOperation
-	Version  VersionRange
+	Op      parser.DDLOperation
+	Version VersionRange
 }
 
 // ddlMatrix is the core classification lookup table.

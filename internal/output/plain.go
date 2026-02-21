@@ -3,7 +3,6 @@ package output
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/nethalo/dbsafe/internal/analyzer"
 	"github.com/nethalo/dbsafe/internal/mysql"
@@ -140,5 +139,4 @@ func (r *PlainRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topolo
 		fmt.Fprintf(r.w, "Members:       %d\n", topo.GRMemberCount)
 	}
 
-	_ = strings.Join // suppress unused import if needed
 }

@@ -39,13 +39,13 @@ type Info struct {
 	FlowControlPausedPct string
 
 	// Group Replication
-	GRMode              string // SINGLE-PRIMARY or MULTI-PRIMARY
-	GRMemberCount       int
-	GRTransactionLimit  int64
-	GRMemberRole        string // PRIMARY or SECONDARY
+	GRMode             string // SINGLE-PRIMARY or MULTI-PRIMARY
+	GRMemberCount      int
+	GRTransactionLimit int64
+	GRMemberRole       string // PRIMARY or SECONDARY
 
 	// General
-	ReadOnly    bool
+	ReadOnly      bool
 	SuperReadOnly bool
 }
 
@@ -216,8 +216,9 @@ func detectGroupReplication(db *sql.DB, info *Info) (bool, error) {
 		defer rows.Close()
 		if rows.Next() {
 			var role, state string
-			rows.Scan(&role, &state)
-			info.GRMemberRole = role
+			if err := rows.Scan(&role, &state); err == nil {
+				info.GRMemberRole = role
+			}
 		}
 	}
 
@@ -253,11 +254,13 @@ func detectReplication(db *sql.DB, info *Info) (bool, error) {
 			// Get column names to find Seconds_Behind_Source/Master
 			cols, _ := rows.Columns()
 			values := make([]sql.NullString, len(cols))
-			ptrs := make([]interface{}, len(cols))
+			ptrs := make([]any, len(cols))
 			for i := range values {
 				ptrs[i] = &values[i]
 			}
-			rows.Scan(ptrs...)
+			if err := rows.Scan(ptrs...); err != nil {
+				return false, fmt.Errorf("scanning replica status: %w", err)
+			}
 
 			for i, col := range cols {
 				switch col {

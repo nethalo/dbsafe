@@ -64,14 +64,14 @@ type ParsedSQL struct {
 	DMLOp         DMLOperation
 	WhereClause   string // for DML: the WHERE as string
 	HasWhere      bool
-	ColumnName    string // for ADD/DROP/MODIFY COLUMN
-	OldColumnName string // for CHANGE COLUMN
-	NewColumnName string // for CHANGE COLUMN
-	ColumnDef     string // full column definition for ADD COLUMN
-	IsFirstAfter  bool   // ADD COLUMN ... FIRST or AFTER
-	IndexName     string // for ADD/DROP INDEX
-	HasNotNull    bool   // ADD COLUMN ... NOT NULL
-	HasDefault    bool   // ADD COLUMN ... DEFAULT
+	ColumnName    string         // for ADD/DROP/MODIFY COLUMN
+	OldColumnName string         // for CHANGE COLUMN
+	NewColumnName string         // for CHANGE COLUMN
+	ColumnDef     string         // full column definition for ADD COLUMN
+	IsFirstAfter  bool           // ADD COLUMN ... FIRST or AFTER
+	IndexName     string         // for ADD/DROP INDEX
+	HasNotNull    bool           // ADD COLUMN ... NOT NULL
+	HasDefault    bool           // ADD COLUMN ... DEFAULT
 	DDLOperations []DDLOperation // for multi-op ALTER TABLE
 }
 

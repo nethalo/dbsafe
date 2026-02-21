@@ -34,7 +34,10 @@ var configInitCmd = &cobra.Command{
 			fmt.Printf("Config file already exists at %s\n", configPath)
 			fmt.Print("Overwrite? [y/N]: ")
 			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
+			answer, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("reading input: %w", err)
+			}
 			if strings.TrimSpace(strings.ToLower(answer)) != "y" {
 				fmt.Println("Aborted.")
 				return nil
@@ -53,32 +56,47 @@ var configInitCmd = &cobra.Command{
 		fmt.Println()
 
 		fmt.Print("MySQL host [127.0.0.1]: ")
-		host, _ := reader.ReadString('\n')
+		host, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading input: %w", err)
+		}
 		host = strings.TrimSpace(host)
 		if host == "" {
 			host = "127.0.0.1"
 		}
 
 		fmt.Print("MySQL port [3306]: ")
-		port, _ := reader.ReadString('\n')
+		port, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading input: %w", err)
+		}
 		port = strings.TrimSpace(port)
 		if port == "" {
 			port = "3306"
 		}
 
 		fmt.Print("MySQL user [dbsafe]: ")
-		user, _ := reader.ReadString('\n')
+		user, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading input: %w", err)
+		}
 		user = strings.TrimSpace(user)
 		if user == "" {
 			user = "dbsafe"
 		}
 
 		fmt.Print("Default database (optional): ")
-		database, _ := reader.ReadString('\n')
+		database, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading input: %w", err)
+		}
 		database = strings.TrimSpace(database)
 
 		fmt.Print("Default output format [text]: ")
-		format, _ := reader.ReadString('\n')
+		format, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("reading input: %w", err)
+		}
 		format = strings.TrimSpace(format)
 		if format == "" {
 			format = "text"

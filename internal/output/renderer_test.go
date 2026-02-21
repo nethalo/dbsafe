@@ -36,8 +36,8 @@ func ddlResult() *analyzer.Result {
 				{Name: "idx_email", Columns: []string{"email"}, Type: "BTREE"},
 			},
 		},
-		Topology: &topology.Info{Type: topology.Standalone},
-		Version:  mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"},
+		Topology:   &topology.Info{Type: topology.Standalone},
+		Version:    mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"},
 		AnalyzedAt: time.Now(),
 
 		DDLOp: parser.AddColumn,
@@ -72,8 +72,8 @@ func dmlResult() *analyzer.Result {
 			IndexLength:  20 * 1024 * 1024,
 			AvgRowLength: 200,
 		},
-		Topology: &topology.Info{Type: topology.Standalone},
-		Version:  mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"},
+		Topology:   &topology.Info{Type: topology.Standalone},
+		Version:    mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"},
 		AnalyzedAt: time.Now(),
 
 		DMLOp:        parser.Delete,
@@ -121,10 +121,10 @@ func ddlResultWithDiskEstimate() *analyzer.Result {
 func galeraResult() *analyzer.Result {
 	r := ddlResult()
 	r.Topology = &topology.Info{
-		Type:              topology.Galera,
-		GaleraClusterSize: 3,
-		GaleraOSUMethod:   "TOI",
-		GaleraNodeState:   "Synced",
+		Type:                 topology.Galera,
+		GaleraClusterSize:    3,
+		GaleraOSUMethod:      "TOI",
+		GaleraNodeState:      "Synced",
 		FlowControlPausedPct: "0.0%",
 	}
 	r.Classification.Algorithm = analyzer.AlgoInplace
@@ -163,7 +163,7 @@ func TestNewRenderer(t *testing.T) {
 		{"markdown", "*output.MarkdownRenderer"},
 		{"plain", "*output.PlainRenderer"},
 		{"text", "*output.TextRenderer"},
-		{"", "*output.TextRenderer"},       // default
+		{"", "*output.TextRenderer"},        // default
 		{"unknown", "*output.TextRenderer"}, // fallback
 	}
 
