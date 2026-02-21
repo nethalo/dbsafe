@@ -19,6 +19,9 @@ vendor/
 .DS_Store
 Thumbs.db
 
+# dbsafe generated output
+dbsafe-plan-*.sql
+
 # Temporary files
 *.tmp
 *.swp
