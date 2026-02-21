@@ -87,6 +87,7 @@ The core flow for analyzing SQL statements:
 - `ddl_matrix.go`: **The DDL classification matrix** - maps (MySQL version × DDL operation) → (algorithm, lock level, table rebuild)
   - Version ranges: V8_0_Early, V8_0_Instant (8.0.12+), V8_0_Full (8.0.29+), V8_4_LTS
   - Critical for determining INSTANT vs INPLACE vs COPY operations
+  - **When modifying this file**, use the `ddl-matrix-reviewer` agent to validate changes (`.claude/agents/ddl-matrix-reviewer.md`)
 - `analyzer.go`: Risk assessment, execution method recommendations (native, gh-ost, pt-osc, chunked)
 
 **`internal/output/`** - Multi-format rendering
