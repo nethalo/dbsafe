@@ -1,0 +1,140 @@
+# Changelog
+
+All notable changes to dbsafe are documented here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project adheres to [Semantic Versioning](https://semver.org/).
+
+---
+
+## [0.2.4] - 2026-02-21
+
+### Fixed
+- `DROP PRIMARY KEY` was misclassified as `DROP INDEX` — now correctly identified as `DropPrimaryKey`
+- `DROP FOREIGN KEY` was misclassified as `DROP INDEX` — now correctly identified as `DropForeignKey`
+- `ADD PRIMARY KEY` was misclassified as `ADD INDEX` — now correctly identified as `AddPrimaryKey`
+
+### Added
+- DDL matrix entries for `ADD/DROP PRIMARY KEY`, `CHANGE ROW FORMAT`, `ADD/DROP PARTITION` — these operations now produce full recommendations instead of the worst-case fallback
+- Parser classification for `ALTER COLUMN SET/DROP DEFAULT`, `ENGINE =`, `ROW_FORMAT =`, `ADD PARTITION`, `DROP PARTITION` (all previously fell through to `OtherDDL`)
+- 14 new tests (9 parser + 5 analyzer) covering all newly classified operations
+
+### Changed
+- Singleton Vitess parser via `sync.Once` instead of per-call allocation
+- README documents all supported DDL operations
+
+---
+
+## [0.2.3] - 2025-12-01
+
+### Added
+- `--version` flag to display the current binary version
+- Output includes both gh-ost and pt-osc tool options for large DDL operations
+
+---
+
+## [0.2.2] - 2025-11-15
+
+### Added
+- `install.sh` one-liner install script with OS/arch auto-detection and checksum verification
+- Disk space requirements included in DDL recommendations
+
+---
+
+## [0.2.1] - 2025-10-28
+
+### Fixed
+- `wsrep_cluster_size` STATUS query escaping in Galera/PXC detection
+- `wsrep_on` variable lookup: falls back to `SHOW VARIABLES` when `SHOW GLOBAL VARIABLES` returns no rows
+- `SHOW VARIABLES` prepared statement issue — now uses direct string formatting with escaping
+- Integration test docker-compose compatibility for Apple Silicon (ARM64)
+
+### Changed
+- Comprehensive test suite with 85–97% coverage across all packages
+- Integration test runner script (`scripts/run-integration-tests.sh`)
+
+---
+
+## [0.2.0] - 2025-10-01
+
+### Fixed
+- Affected rows calculation for DML statements with WHERE clause
+
+### Added
+- Comprehensive test coverage for production readiness
+- Security hardening: SQL injection prevention, file permission checks, path traversal prevention
+
+---
+
+## [0.1.5] - 2025-09-15
+
+### Fixed
+- PXC detection: `wsrep_on` requires `SHOW VARIABLES` (not `SHOW GLOBAL VARIABLES`)
+
+---
+
+## [0.1.4] - 2025-09-10
+
+### Fixed
+- `--verbose` flag was not passed through to topology detection
+
+### Changed
+- "What It Analyzes" sections expanded by default in README
+
+---
+
+## [0.1.3] - 2025-09-05
+
+### Fixed
+- Operation/recommendation/rollback sections no longer shown for unparsable DDL
+- Usage text suppressed on command errors
+
+### Added
+- Executable gh-ost and pt-osc command generation in recommendations
+- Verbose debug logging for PXC detection
+
+---
+
+## [0.1.2] - 2025-08-20
+
+### Added
+- dbsafe logo SVG
+- Apache 2.0 license
+- Column validation to detect DDL failures before execution
+- Syntax validation warning for unparsable DDL operations
+
+### Fixed
+- PXC cluster detection error handling
+- Skip `CREATE USER` recommendation when connecting as root
+
+---
+
+## [0.1.1] - 2025-08-10
+
+### Fixed
+- Password flag (`-p`) handling
+- Config file loading
+- PXC topology detection
+
+---
+
+## [0.1.0] - 2025-08-01
+
+### Added
+- Initial release
+- DDL analysis: INSTANT/INPLACE/COPY classification across MySQL 8.0 and 8.4 LTS
+- DML analysis: DELETE/UPDATE/INSERT with WHERE clause detection and chunked script generation
+- Topology detection: Galera/PXC, Group Replication, async replication, standalone
+- Output formats: text, plain, JSON, markdown
+- GoReleaser config and GitHub Actions release workflow
+
+[0.2.4]: https://github.com/nethalo/dbsafe/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/nethalo/dbsafe/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/nethalo/dbsafe/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/nethalo/dbsafe/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/nethalo/dbsafe/compare/v0.1.5...v0.2.0
+[0.1.5]: https://github.com/nethalo/dbsafe/compare/v0.1.4...v0.1.5
+[0.1.4]: https://github.com/nethalo/dbsafe/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/nethalo/dbsafe/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/nethalo/dbsafe/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/nethalo/dbsafe/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/nethalo/dbsafe/releases/tag/v0.1.0
