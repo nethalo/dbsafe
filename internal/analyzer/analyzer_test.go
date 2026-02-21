@@ -214,6 +214,86 @@ func TestClassifyDDL_RenameTable(t *testing.T) {
 	}
 }
 
+func TestClassifyDDL_AddPrimaryKey(t *testing.T) {
+	// All versions: COPY + SHARED + table rebuild
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.AddPrimaryKey, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoCopy {
+			t.Errorf("v%d.%d.%d: Algorithm = %q, want COPY", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockShared {
+			t.Errorf("v%d.%d.%d: Lock = %q, want SHARED", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if !c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: RebuildsTable = false, want true", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+func TestClassifyDDL_DropPrimaryKey(t *testing.T) {
+	// All versions: COPY + SHARED + table rebuild
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.DropPrimaryKey, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoCopy {
+			t.Errorf("v%d.%d.%d: Algorithm = %q, want COPY", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockShared {
+			t.Errorf("v%d.%d.%d: Lock = %q, want SHARED", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if !c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: RebuildsTable = false, want true", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+func TestClassifyDDL_ChangeRowFormat(t *testing.T) {
+	// All versions: INPLACE + no lock + table rebuild
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.ChangeRowFormat, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if !c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: RebuildsTable = false, want true", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+func TestClassifyDDL_AddPartition(t *testing.T) {
+	// All versions: INPLACE + no lock + no rebuild
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.AddPartition, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: RebuildsTable = true, want false", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+func TestClassifyDDL_DropPartition(t *testing.T) {
+	// All versions: INPLACE + no lock + no rebuild
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.DropPartition, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: RebuildsTable = true, want false", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
 func TestClassifyDDL_UnknownOp(t *testing.T) {
 	c := ClassifyDDL("UNKNOWN_OP", 8, 0, 35)
 	// Should return safe fallback: COPY + SHARED
