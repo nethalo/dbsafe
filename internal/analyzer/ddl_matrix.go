@@ -216,6 +216,52 @@ var ddlMatrix = map[matrixKey]DDLClassification{
 	{parser.DropDefault, V8_0_Instant}: {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "Metadata-only change."},
 	{parser.DropDefault, V8_0_Full}:    {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "Metadata-only change."},
 	{parser.DropDefault, V8_4_LTS}:     {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "Metadata-only change."},
+
+	// ═══════════════════════════════════════════════════
+	// ADD PRIMARY KEY
+	// InnoDB organizes data around the clustered index, so adding a primary key
+	// always requires a full table rebuild across all versions.
+	// ═══════════════════════════════════════════════════
+	{parser.AddPrimaryKey, V8_0_Early}:   {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows around the new clustered index."},
+	{parser.AddPrimaryKey, V8_0_Instant}: {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows around the new clustered index."},
+	{parser.AddPrimaryKey, V8_0_Full}:    {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows around the new clustered index."},
+	{parser.AddPrimaryKey, V8_4_LTS}:     {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows around the new clustered index."},
+
+	// ═══════════════════════════════════════════════════
+	// DROP PRIMARY KEY
+	// Removing the clustered index also requires a full table rebuild.
+	// ═══════════════════════════════════════════════════
+	{parser.DropPrimaryKey, V8_0_Early}:   {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows without the clustered index."},
+	{parser.DropPrimaryKey, V8_0_Instant}: {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows without the clustered index."},
+	{parser.DropPrimaryKey, V8_0_Full}:    {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows without the clustered index."},
+	{parser.DropPrimaryKey, V8_4_LTS}:     {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows without the clustered index."},
+
+	// ═══════════════════════════════════════════════════
+	// CHANGE ROW FORMAT
+	// INPLACE but requires table data rebuild. Concurrent DML is allowed.
+	// ═══════════════════════════════════════════════════
+	{parser.ChangeRowFormat, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
+	{parser.ChangeRowFormat, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
+	{parser.ChangeRowFormat, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
+	{parser.ChangeRowFormat, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
+
+	// ═══════════════════════════════════════════════════
+	// ADD PARTITION
+	// INPLACE, no rebuild of existing partitions.
+	// ═══════════════════════════════════════════════════
+	{parser.AddPartition, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Only adds new partition definition; existing data and partitions are unaffected."},
+	{parser.AddPartition, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Only adds new partition definition; existing data and partitions are unaffected."},
+	{parser.AddPartition, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Only adds new partition definition; existing data and partitions are unaffected."},
+	{parser.AddPartition, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Only adds new partition definition; existing data and partitions are unaffected."},
+
+	// ═══════════════════════════════════════════════════
+	// DROP PARTITION
+	// INPLACE. Deallocates the partition's tablespace; other partitions are untouched.
+	// ═══════════════════════════════════════════════════
+	{parser.DropPartition, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Removes partition and its rows; other partitions are not rebuilt."},
+	{parser.DropPartition, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Removes partition and its rows; other partitions are not rebuilt."},
+	{parser.DropPartition, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Removes partition and its rows; other partitions are not rebuilt."},
+	{parser.DropPartition, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Removes partition and its rows; other partitions are not rebuilt."},
 }
 
 // ClassifyDDL looks up the DDL operation in the matrix.
