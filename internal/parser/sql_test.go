@@ -474,19 +474,108 @@ func TestParse_InvalidSQL(t *testing.T) {
 }
 
 func TestParse_InvalidDataType(t *testing.T) {
-	// Test with typo: VRCHAR instead of VARCHAR
+	// Vitess cannot classify ADD COLUMN with an unknown type (e.g. VRCHAR);
+	// the AlterTable AST node is returned but the AlterOptions produce OtherDDL.
 	sql := "ALTER TABLE users ADD COLUMN email VRCHAR(255) NOT NULL DEFAULT ''"
 	result, err := Parse(sql)
-
-	// Log what we get
 	if err != nil {
-		t.Logf("Parse returned error: %v", err)
-	} else {
-		t.Logf("Parse succeeded:")
-		t.Logf("  Type: %s", result.Type)
-		t.Logf("  DDLOp: %s", result.DDLOp)
-		t.Logf("  ColumnName: %s", result.ColumnName)
-		t.Logf("  ColumnDef: %s", result.ColumnDef)
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Type != DDL {
+		t.Errorf("Type = %q, want DDL", result.Type)
+	}
+	if result.DDLOp != OtherDDL {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, OtherDDL)
+	}
+}
+
+func TestParse_AlterTableDropPrimaryKey(t *testing.T) {
+	result, err := Parse("ALTER TABLE t DROP PRIMARY KEY")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != DropPrimaryKey {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, DropPrimaryKey)
+	}
+}
+
+func TestParse_AlterTableDropForeignKey(t *testing.T) {
+	result, err := Parse("ALTER TABLE t DROP FOREIGN KEY fk_user")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != DropForeignKey {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, DropForeignKey)
+	}
+}
+
+func TestParse_AlterTableAddPrimaryKey(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ADD PRIMARY KEY (id)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddPrimaryKey {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddPrimaryKey)
+	}
+}
+
+func TestParse_AlterTableChangeEngine(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ENGINE = InnoDB")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ChangeEngine {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ChangeEngine)
+	}
+}
+
+func TestParse_AlterTableChangeRowFormat(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ROW_FORMAT = DYNAMIC")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ChangeRowFormat {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ChangeRowFormat)
+	}
+}
+
+func TestParse_AlterTableSetDefault(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ALTER COLUMN c SET DEFAULT 42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != SetDefault {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, SetDefault)
+	}
+}
+
+func TestParse_AlterTableDropDefault(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ALTER COLUMN c DROP DEFAULT")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != DropDefault {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, DropDefault)
+	}
+}
+
+func TestParse_AlterTableAddPartition(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ADD PARTITION (PARTITION p1 VALUES LESS THAN (100))")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddPartition {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddPartition)
+	}
+}
+
+func TestParse_AlterTableDropPartition(t *testing.T) {
+	result, err := Parse("ALTER TABLE t DROP PARTITION p1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != DropPartition {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, DropPartition)
 	}
 }
 

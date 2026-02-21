@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"vitess.io/vitess/go/vt/sqlparser"
 )
@@ -74,17 +75,30 @@ type ParsedSQL struct {
 	DDLOperations []DDLOperation // for multi-op ALTER TABLE
 }
 
+var (
+	parserOnce      sync.Once
+	globalParser    *sqlparser.Parser
+	globalParserErr error
+)
+
+func getParser() (*sqlparser.Parser, error) {
+	parserOnce.Do(func() {
+		globalParser, globalParserErr = sqlparser.New(sqlparser.Options{})
+	})
+	return globalParser, globalParserErr
+}
+
 // Parse parses a SQL statement and extracts information needed for analysis.
 func Parse(sql string) (*ParsedSQL, error) {
 	sql = strings.TrimSpace(sql)
 	sql = strings.TrimRight(sql, ";")
 
-	parser, err := sqlparser.New(sqlparser.Options{})
+	p, err := getParser()
 	if err != nil {
 		return nil, fmt.Errorf("creating parser: %w", err)
 	}
 
-	stmt, err := parser.Parse(sql)
+	stmt, err := p.Parse(sql)
 	if err != nil {
 		return nil, fmt.Errorf("parsing SQL: %w", err)
 	}
@@ -117,10 +131,7 @@ func Parse(sql string) (*ParsedSQL, error) {
 		if len(s.TableExprs) > 0 {
 			result.Database, result.Table = extractFromTableExprs(s.TableExprs)
 		}
-		if s.Where != nil {
-			result.WhereClause = sqlparser.String(s.Where.Expr)
-			result.HasWhere = true
-		}
+		extractWhere(s.Where, result)
 
 	case *sqlparser.Update:
 		result.Type = DML
@@ -128,10 +139,7 @@ func Parse(sql string) (*ParsedSQL, error) {
 		if len(s.TableExprs) > 0 {
 			result.Database, result.Table = extractFromTableExprs(s.TableExprs)
 		}
-		if s.Where != nil {
-			result.WhereClause = sqlparser.String(s.Where.Expr)
-			result.HasWhere = true
-		}
+		extractWhere(s.Where, result)
 
 	case *sqlparser.Insert:
 		result.Type = DML
@@ -172,7 +180,26 @@ func extractFromTableExprs(exprs sqlparser.TableExprs) (string, string) {
 	return "", ""
 }
 
+func extractWhere(where *sqlparser.Where, result *ParsedSQL) {
+	if where != nil {
+		result.WhereClause = sqlparser.String(where.Expr)
+		result.HasWhere = true
+	}
+}
+
 func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
+	// Partition operations live in PartitionSpec, not AlterOptions.
+	if alter.PartitionSpec != nil {
+		switch alter.PartitionSpec.Action {
+		case sqlparser.AddAction:
+			result.DDLOp = AddPartition
+			return
+		case sqlparser.DropAction:
+			result.DDLOp = DropPartition
+			return
+		}
+	}
+
 	if len(alter.AlterOptions) == 0 {
 		result.DDLOp = OtherDDL
 		return
@@ -235,7 +262,7 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 }
 
 func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
-	switch opt.(type) {
+	switch opt := opt.(type) {
 	case *sqlparser.AddColumns:
 		return AddColumn
 	case *sqlparser.DropColumn:
@@ -245,13 +272,41 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 	case *sqlparser.ChangeColumn:
 		return ChangeColumn
 	case *sqlparser.AddIndexDefinition:
+		if opt.IndexDefinition.Info.Type == sqlparser.IndexTypePrimary {
+			return AddPrimaryKey
+		}
 		return AddIndex
 	case *sqlparser.DropKey:
-		return DropIndex // simplified; could be DropPrimaryKey or DropForeignKey
+		switch opt.Type {
+		case sqlparser.PrimaryKeyType:
+			return DropPrimaryKey
+		case sqlparser.ForeignKeyType:
+			return DropForeignKey
+		default:
+			return DropIndex
+		}
 	case *sqlparser.AddConstraintDefinition:
 		return AddForeignKey
 	case *sqlparser.AlterCharset:
 		return ChangeCharset
+	case *sqlparser.AlterColumn:
+		if opt.DropDefault {
+			return DropDefault
+		}
+		if opt.DefaultVal != nil {
+			return SetDefault
+		}
+		return OtherDDL
+	case sqlparser.TableOptions:
+		for _, tableOpt := range opt {
+			switch tableOpt.Name {
+			case "ENGINE":
+				return ChangeEngine
+			case "ROW_FORMAT":
+				return ChangeRowFormat
+			}
+		}
+		return OtherDDL
 	default:
 		return OtherDDL
 	}
