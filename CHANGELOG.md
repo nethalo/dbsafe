@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.2.5] - 2026-02-21
+
+### Fixed
+- Unchecked error returns from `bufio.ReadString` in `config init` interactive prompts (`cmd/config.go`)
+- Unchecked `rows.Scan` error in Group Replication member role detection (`internal/topology/detector.go`)
+- Unchecked `rows.Scan` error in async replication lag detection (`internal/topology/detector.go`)
+
+### Changed
+- `interface{}` replaced with `any` in replication status scan slice (Go 1.18+ idiom)
+- Removed unused `strings` import and `_ = strings.Join` workaround from `plain.go`
+- Struct field alignment normalised across multiple files (gofmt)
+
+---
+
 ## [0.2.4] - 2026-02-21
 
 ### Fixed
@@ -127,6 +141,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - Output formats: text, plain, JSON, markdown
 - GoReleaser config and GitHub Actions release workflow
 
+[0.2.5]: https://github.com/nethalo/dbsafe/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/nethalo/dbsafe/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/nethalo/dbsafe/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/nethalo/dbsafe/compare/v0.2.1...v0.2.2

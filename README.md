@@ -67,7 +67,7 @@ curl -sSfL https://raw.githubusercontent.com/nethalo/dbsafe/main/install.sh | sh
 
 ```bash
 # Set version
-VERSION=0.2.4
+VERSION=0.2.5
 
 # macOS (Apple Silicon)
 curl -L https://github.com/nethalo/dbsafe/releases/download/v${VERSION}/dbsafe_${VERSION}_darwin_arm64.tar.gz | tar xz

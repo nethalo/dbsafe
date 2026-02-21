@@ -14,7 +14,10 @@ go test ./...       # Run all tests (quiet)
 go test -run TestName ./internal/parser  # Run specific test in package
 
 # Linting
-make lint           # Requires golangci-lint
+make lint           # Requires golangci-lint (not available in sandbox — TLS blocked)
+go vet ./...        # Available everywhere; catches most critical issues
+# golangci-lint is not installable in the Claude Code sandbox (TLS cert error).
+# Use go vet + manual errcheck review instead.
 
 # Clean build artifacts
 make clean
