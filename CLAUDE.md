@@ -30,6 +30,23 @@ make deps           # Download dependencies
 make tidy           # Tidy go.mod/go.sum
 ```
 
+## Demo Environment
+
+A MySQL 8.0 instance pre-loaded with ~2.4M rows of realistic e-commerce data. See `DEMO.md` for the full usage guide.
+
+```bash
+make demo-up       # Start MySQL container + seed data (3-5 min first run)
+make demo-down     # Stop and remove container + data
+```
+
+**Connection**: `127.0.0.1:23306`, user `dbsafe`, database `demo`, password via `DBSAFE_PASSWORD=dbsafe_demo`
+
+**Key tables**: `orders` (~2.4M rows, 1.2 GB, utf8mb3, 2 triggers), `audit_log` (~250K rows), `order_items` (2 FKs), `customers`, `products`
+
+**What it showcases**: DANGEROUS risk levels (COPY on 1.2 GB), gh-ost/pt-osc command generation, chunked DML scripts (>100K rows), trigger fire warnings, FK displays, INSTANT vs COPY contrast.
+
+**Files**: `docker-compose.demo.yml`, `scripts/demo-seed.sql`, `DEMO.md`
+
 ## Architecture Overview
 
 ### Processing Flow

@@ -1,0 +1,34 @@
+# Docker Compose demo environment for dbsafe
+# Provides a MySQL 8.0 instance pre-loaded with ~1.3 GB of realistic e-commerce data
+# to showcase DANGEROUS risk levels, gh-ost/pt-osc recommendations, chunked DML,
+# trigger warnings, and FK displays.
+#
+# Usage:
+#   make demo-up    # Start (takes ~3-5 min to seed data on first run)
+#   make demo-down  # Stop and remove
+
+services:
+  mysql-demo:
+    image: mysql:8.0
+    platform: linux/amd64  # Required for Apple Silicon (runs via Rosetta 2)
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "23306:3306"
+    tmpfs:
+      - /var/lib/mysql:size=4g
+    command: >
+      --innodb-buffer-pool-size=256M
+      --innodb-flush-log-at-trx-commit=0
+      --innodb-doublewrite=0
+      --skip-log-bin
+      --innodb-io-capacity=2000
+      --innodb-io-capacity-max=4000
+    volumes:
+      - ./scripts/demo-seed.sql:/docker-entrypoint-initdb.d/demo-seed.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 40
+      start_period: 300s
