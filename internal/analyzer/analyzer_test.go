@@ -408,6 +408,51 @@ func TestAnalyzeDDL_CopyAlgo_LargeTable_Galera(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDDL_GhostOverriddenByTriggers(t *testing.T) {
+	// Large table + triggers: gh-ost must be overridden by pt-osc.
+	input := ddlInput(parser.ModifyColumn, v8_0_35, 2*1024*1024*1024, topology.Standalone) // 2GB
+	input.Meta.Triggers = []mysql.TriggerInfo{
+		{Name: "trg_audit", Event: "UPDATE", Timing: "AFTER"},
+	}
+
+	result := Analyze(input)
+
+	if result.Method != ExecPtOSC {
+		t.Errorf("Method = %q, want PT-ONLINE-SCHEMA-CHANGE (table has triggers, gh-ost incompatible)", result.Method)
+	}
+	if result.AlternativeMethod != "" {
+		t.Errorf("AlternativeMethod = %q, want empty (no gh-ost alternative when triggers present)", result.AlternativeMethod)
+	}
+	if !containsStr(result.MethodRationale, "trigger") {
+		t.Errorf("MethodRationale should mention triggers, got: %s", result.MethodRationale)
+	}
+}
+
+func TestAnalyzeDDL_GhostNotOverriddenWithoutTriggers(t *testing.T) {
+	// Regression guard: large table without triggers should still recommend gh-ost.
+	input := ddlInput(parser.ModifyColumn, v8_0_35, 2*1024*1024*1024, topology.Standalone) // 2GB
+
+	result := Analyze(input)
+
+	if result.Method != ExecGhost {
+		t.Errorf("Method = %q, want GH-OST (no triggers present)", result.Method)
+	}
+}
+
+func TestAnalyzeDDL_SmallTableWithTriggers_StillDirect(t *testing.T) {
+	// Small table + triggers: method stays DIRECT (trigger check only applies to gh-ost path).
+	input := ddlInput(parser.ModifyColumn, v8_0_35, 500*1024*1024, topology.Standalone) // 500MB
+	input.Meta.Triggers = []mysql.TriggerInfo{
+		{Name: "trg_audit", Event: "UPDATE", Timing: "AFTER"},
+	}
+
+	result := Analyze(input)
+
+	if result.Method != ExecDirect {
+		t.Errorf("Method = %q, want DIRECT (small table; trigger override only applies to gh-ost)", result.Method)
+	}
+}
+
 func TestAnalyzeDDL_InplaceSharedLock_SmallTable(t *testing.T) {
 	// ADD COLUMN FIRST/AFTER on 8.0.20 → INPLACE + downgrade won't have SHARED lock
 	// Use ADD FOREIGN KEY which is INPLACE + NONE by default

@@ -31,6 +31,12 @@ const ptOSCOnlyRationale = "gh-ost is NOT compatible with Galera/PXC: it relies 
 	"conflicts with Galera's writeset replication and will corrupt the cluster. " +
 	"pt-online-schema-change uses triggers that replicate correctly across all Galera nodes."
 
+// ptOSCTriggerRationale explains why gh-ost cannot be used when the table has existing triggers.
+const ptOSCTriggerRationale = "gh-ost cannot operate on tables with existing triggers: it creates a shadow " +
+	"table and uses binlog streaming to replay changes, but triggers on the original table would also fire " +
+	"during the shadow table population, causing data corruption or errors. " +
+	"pt-online-schema-change supports --preserve-triggers to safely migrate tables that have triggers."
+
 // ExecutionMethod is what dbsafe recommends.
 type ExecutionMethod string
 
@@ -267,6 +273,15 @@ func analyzeDDL(input Input, result *Result) {
 			}
 			result.Method = ExecDirect
 		}
+	}
+
+	// gh-ost cannot operate on tables with triggers: its shadow table approach causes triggers
+	// on the original table to fire during population, leading to data corruption or errors.
+	// Override to pt-osc (with --preserve-triggers) when triggers are present.
+	if result.Method == ExecGhost && len(input.Meta.Triggers) > 0 {
+		result.Method = ExecPtOSC
+		result.AlternativeMethod = ""
+		result.MethodRationale = ptOSCTriggerRationale
 	}
 
 	// Generate executable command for the primary method, and alternative when both are viable.
