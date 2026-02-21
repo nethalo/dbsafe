@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.2.6] - 2026-02-21
+
+### Added
+- Demo environment: MySQL 8.0 pre-loaded with ~2.4M rows of e-commerce data (`docker-compose.demo.yml`, `scripts/demo-seed.sql`, `DEMO.md`)
+- `make demo-up` / `make demo-down` targets for one-command demo setup
+- `.gitignore` pattern for generated chunked SQL plan output files (`dbsafe-plan-*.sql`)
+
 ## [0.2.5] - 2026-02-21
 
 ### Fixed
@@ -141,6 +148,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - Output formats: text, plain, JSON, markdown
 - GoReleaser config and GitHub Actions release workflow
 
+[0.2.6]: https://github.com/nethalo/dbsafe/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/nethalo/dbsafe/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/nethalo/dbsafe/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/nethalo/dbsafe/compare/v0.2.2...v0.2.3
