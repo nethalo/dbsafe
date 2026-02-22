@@ -43,7 +43,7 @@ make demo-down     # Stop and remove container + data
 
 **Key tables**: `orders` (~2.4M rows, 1.2 GB, utf8mb3, 2 triggers), `audit_log` (~250K rows), `order_items` (2 FKs), `customers`, `products`
 
-**What it showcases**: DANGEROUS risk levels (COPY on 1.2 GB), gh-ost/pt-osc command generation, chunked DML scripts (>100K rows), trigger fire warnings, FK displays, INSTANT vs COPY contrast.
+**What it showcases**: DANGEROUS risk levels (COPY on 1.2 GB), pt-osc-only recommendation for `orders` (has 2 triggers — gh-ost is excluded), chunked DML scripts (>100K rows), trigger fire warnings, FK displays, INSTANT vs COPY contrast.
 
 **Files**: `docker-compose.demo.yml`, `scripts/demo-seed.sql`, `DEMO.md`
 
@@ -135,6 +135,8 @@ defaults:
 - Galera/PXC: Read `wsrep_cluster_size` from **status** first, fallback to variable
 
 ### Testing
+
+See [TESTING.md](TESTING.md) for the full testing guide (coverage reports, integration test setup, benchmarks, fuzz tests, CI/CD examples).
 
 **Test files**: `*_test.go` in same package
 
