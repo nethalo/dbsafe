@@ -32,13 +32,13 @@ services:
       MYSQL_PASSWORD: test_password
     ports:
       - "13307:3306"
+    volumes:
+      - ./test/mysql84.cnf:/etc/mysql/conf.d/mysql84.cnf:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
       interval: 5s
       timeout: 3s
       retries: 10
-    tmpfs:
-      - /var/lib/mysql:size=1G
 
   # Percona Server 8.0
   percona:
@@ -65,14 +65,18 @@ services:
     platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: dbsafe
+      MYSQL_PASSWORD: test_password
       CLUSTER_NAME: test_cluster
       XTRABACKUP_PASSWORD: test_xtrabackup_password
     ports:
       - "13309:3306"
-    volumes:
-      - ./test/pxc-bootstrap.sql:/docker-entrypoint-initdb.d/bootstrap.sql
-    tmpfs:
-      - /var/lib/mysql:size=1G
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   # MySQL Group Replication - Primary
   gr-primary:

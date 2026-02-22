@@ -368,6 +368,13 @@ dial tcp 127.0.0.1:13306: connect: connection refused
 ```
 **Solution**: Wait longer for containers to be ready, or increase wait time in test
 
+**Problem**: `percona` container exits immediately (code 1) on Apple Silicon
+```
+percona  exited (1)
+```
+**Cause**: Percona Server 8.0 does not publish ARM64 images. The `linux/amd64` image crashes under Rosetta 2 emulation on Apple Silicon Macs.
+**Solution**: The `percona` container and its integration tests are expected to be unavailable on ARM64 hosts. Tests that target it will skip automatically. This container works correctly on x86-64 (amd64) Linux hosts and in CI.
+
 ### Fuzz Tests
 
 **Problem**: Crashes not reproducible

@@ -286,6 +286,65 @@ services:
 ./scripts/run-integration-tests.sh -c     # Cleanup when done
 ```
 
+**7. tmpfs and MySQL on macOS Docker Desktop**
+
+Not all MySQL images work with `tmpfs` on macOS Docker Desktop. The Lima VM that Docker Desktop uses doesn't support certain kernel ioctls that some MySQL startup code relies on:
+
+- **MySQL 8.0**: Works fine with `tmpfs`
+- **MySQL 8.4**: Crashes with `MY-011065 Unable to determine if daemon is running: Inappropriate ioctl for device` — remove `tmpfs`, let it use overlay2
+- **PXC 8.0**: Crashes with `Permission denied` on the tmpfs mount point — remove `tmpfs`, let it use overlay2
+
+```yaml
+# Works on macOS Docker Desktop:
+mysql-standalone:
+  tmpfs:
+    - /var/lib/mysql:size=1G  # OK for mysql:8.0
+
+# Broken on macOS Docker Desktop — remove tmpfs entirely:
+mysql-lts:
+  # no tmpfs: section — uses overlay2 instead
+pxc-node1:
+  # no tmpfs: section — uses overlay2 instead
+```
+
+**8. MySQL 8.4 auth: use config file mount, not `command:` override**
+
+MySQL 8.4 defaults to `caching_sha2_password`. To re-enable `mysql_native_password` for plaintext TCP connections in Docker:
+
+✅ **CORRECT** — mount a config file (doesn't change entrypoint behavior):
+```yaml
+volumes:
+  - ./test/mysql84.cnf:/etc/mysql/conf.d/mysql84.cnf:ro
+```
+```ini
+# test/mysql84.cnf
+[mysqld]
+mysql_native_password=ON
+```
+
+❌ **WRONG** — `command:` override changes how the Docker entrypoint starts the temporary init server, triggering the ioctl crash on macOS:
+```yaml
+command: --mysql-native-password=ON  # breaks MySQL 8.4 on macOS
+```
+
+**9. PXC env vars required for single-node bootstrap**
+
+PXC requires the same env vars as vanilla MySQL images (`MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`) plus PXC-specific ones. The bootstrap SQL file (`/docker-entrypoint-initdb.d/`) is NOT needed when env vars are set — adding it can interfere with the PXC wsrep bootstrap phase and cause the timezone-load step to fail.
+
+```yaml
+pxc-node1:
+  environment:
+    MYSQL_ROOT_PASSWORD: test_root_password
+    MYSQL_DATABASE: testdb
+    MYSQL_USER: dbsafe
+    MYSQL_PASSWORD: test_password
+    CLUSTER_NAME: test_cluster
+    XTRABACKUP_PASSWORD: test_xtrabackup_password
+  # No volumes: with initdb SQL — env vars handle DB/user creation
+```
+
+**ARM64 / Apple Silicon limitations**: `percona:8.0` has no ARM64 image (crashes immediately). `pxc-node1` bootstraps successfully on x86-64 but Galera's `asio` SSL network layer hangs non-deterministically under Rosetta 2. The current integration tests (`TestIntegration_StandaloneMySQL`, `TestIntegration_MySQLLTS`, `TestIntegration_DDLClassification`) only target `mysql-standalone` and `mysql-lts` and pass on Apple Silicon.
+
 **6. Fixing Escaping Issues - Use Byte-Level Operations**
 
 When shell/sed/perl escaping becomes confusing, use Python byte mode:

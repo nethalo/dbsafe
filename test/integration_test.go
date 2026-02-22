@@ -57,12 +57,11 @@ func waitForMySQL(dsn string, maxAttempts int) error {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		defer db.Close()
-
-		if err := db.Ping(); err == nil {
+		err = db.Ping()
+		db.Close()
+		if err == nil {
 			return nil
 		}
-
 		time.Sleep(1 * time.Second)
 	}
 	return fmt.Errorf("MySQL not ready after %d attempts", maxAttempts)
