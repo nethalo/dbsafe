@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -599,5 +600,169 @@ func TestParse_WhitespaceHandling(t *testing.T) {
 	}
 	if result.Type != DDL {
 		t.Errorf("Type = %q, want DDL", result.Type)
+	}
+}
+
+// TestParse_RawSQL verifies the RawSQL field stores the cleaned input (trimmed,
+// semicolon stripped) so callers can reproduce the exact statement that was analyzed.
+func TestParse_RawSQL(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantRaw string
+	}{
+		{
+			input:   "ALTER TABLE users ADD COLUMN email VARCHAR(255);",
+			wantRaw: "ALTER TABLE users ADD COLUMN email VARCHAR(255)",
+		},
+		{
+			input:   "  DELETE FROM logs WHERE id = 1  ",
+			wantRaw: "DELETE FROM logs WHERE id = 1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.RawSQL != tt.wantRaw {
+				t.Errorf("RawSQL = %q, want %q", result.RawSQL, tt.wantRaw)
+			}
+		})
+	}
+}
+
+// TestParse_AlterTableChangeColumn_Fields checks that OldColumnName, NewColumnName,
+// and ColumnDef are all populated for CHANGE COLUMN — these are used by the analyzer
+// but were not asserted in the existing test.
+func TestParse_AlterTableChangeColumn_Fields(t *testing.T) {
+	result, err := Parse("ALTER TABLE users CHANGE COLUMN old_name new_name VARCHAR(500)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.OldColumnName != "old_name" {
+		t.Errorf("OldColumnName = %q, want %q", result.OldColumnName, "old_name")
+	}
+	if result.NewColumnName != "new_name" {
+		t.Errorf("NewColumnName = %q, want %q", result.NewColumnName, "new_name")
+	}
+	if result.ColumnDef == "" {
+		t.Error("ColumnDef is empty, expected non-empty")
+	}
+}
+
+// TestParse_AlterTableModifyColumn_ColumnName checks that ColumnName and ColumnDef
+// are extracted for MODIFY COLUMN, which the existing test omits.
+func TestParse_AlterTableModifyColumn_ColumnName(t *testing.T) {
+	result, err := Parse("ALTER TABLE users MODIFY COLUMN email VARCHAR(500) NOT NULL")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ColumnName != "email" {
+		t.Errorf("ColumnName = %q, want %q", result.ColumnName, "email")
+	}
+	if result.ColumnDef == "" {
+		t.Error("ColumnDef is empty, expected non-empty")
+	}
+}
+
+// TestParse_WhereClauseContent verifies the WhereClause string contains the actual
+// condition, not just that it's non-empty.
+func TestParse_WhereClauseContent(t *testing.T) {
+	result, err := Parse("DELETE FROM logs WHERE id = 1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.HasWhere {
+		t.Error("HasWhere = false, want true")
+	}
+	if !strings.Contains(result.WhereClause, "id") {
+		t.Errorf("WhereClause = %q, expected to contain column name 'id'", result.WhereClause)
+	}
+}
+
+// TestParse_AddColumn_ColumnDef verifies that ColumnDef is populated for ADD COLUMN.
+func TestParse_AddColumn_ColumnDef(t *testing.T) {
+	result, err := Parse("ALTER TABLE users ADD COLUMN score DECIMAL(10,2) NOT NULL DEFAULT 0.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ColumnDef == "" {
+		t.Error("ColumnDef is empty, expected non-empty")
+	}
+}
+
+// TestParse_DropForeignKey_IndexName checks that IndexName is captured for
+// DROP FOREIGN KEY, which the existing test omits.
+func TestParse_DropForeignKey_IndexName(t *testing.T) {
+	result, err := Parse("ALTER TABLE orders DROP FOREIGN KEY fk_user")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IndexName != "fk_user" {
+		t.Errorf("IndexName = %q, want %q", result.IndexName, "fk_user")
+	}
+}
+
+// TestParse_UpdateQualifiedTable checks that the database name is extracted from a
+// qualified table reference in UPDATE, mirroring the equivalent DELETE test.
+func TestParse_UpdateQualifiedTable(t *testing.T) {
+	result, err := Parse("UPDATE mydb.users SET status = 'active' WHERE id = 1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Database != "mydb" {
+		t.Errorf("Database = %q, want %q", result.Database, "mydb")
+	}
+	if result.Table != "users" {
+		t.Errorf("Table = %q, want %q", result.Table, "users")
+	}
+	if !result.HasWhere {
+		t.Error("HasWhere = false, want true")
+	}
+}
+
+// TestParse_RenameTableQualified verifies that the source database and table are
+// extracted correctly when RENAME TABLE uses a qualified name.
+func TestParse_RenameTableQualified(t *testing.T) {
+	result, err := Parse("RENAME TABLE mydb.users TO mydb.users_backup")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Database != "mydb" {
+		t.Errorf("Database = %q, want %q", result.Database, "mydb")
+	}
+	if result.Table != "users" {
+		t.Errorf("Table = %q, want %q", result.Table, "users")
+	}
+}
+
+// TestParse_OtherDDLTableOption exercises the TableOptions branch of
+// classifySingleAlterOp for a table option that is neither ENGINE nor ROW_FORMAT.
+func TestParse_OtherDDLTableOption(t *testing.T) {
+	result, err := Parse("ALTER TABLE t AUTO_INCREMENT = 1000")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != OtherDDL {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, OtherDDL)
+	}
+}
+
+// TestParse_BacktickIdentifiers is a unit test (vs benchmark) confirming that
+// backtick-quoted database, table, and column names are correctly unquoted.
+func TestParse_BacktickIdentifiers(t *testing.T) {
+	result, err := Parse("ALTER TABLE `my_db`.`my_table` ADD COLUMN `new_col` INT")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Database != "my_db" {
+		t.Errorf("Database = %q, want %q", result.Database, "my_db")
+	}
+	if result.Table != "my_table" {
+		t.Errorf("Table = %q, want %q", result.Table, "my_table")
+	}
+	if result.ColumnName != "new_col" {
+		t.Errorf("ColumnName = %q, want %q", result.ColumnName, "new_col")
 	}
 }
