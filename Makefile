@@ -33,7 +33,7 @@ build-all:
 
 # Demo environment: MySQL 8.0 pre-loaded with ~1.3 GB of e-commerce data
 # Showcases DANGEROUS risk levels, gh-ost/pt-osc commands, chunked DML, triggers, and FK display.
-demo-up:
+demo-up: build
 	@echo "Starting dbsafe demo environment..."
 	@docker compose -f docker-compose.demo.yml up -d
 	@echo "Seeding ~2.56M rows of demo data (3-5 min on first run)..."
