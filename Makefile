@@ -38,7 +38,10 @@ demo-up: build
 	@docker compose -f docker-compose.demo.yml up -d
 	@echo "Seeding ~2.56M rows of demo data (3-5 min on first run)..."
 	@until docker compose -f docker-compose.demo.yml exec -T mysql-demo \
-		mysql -u dbsafe -pdbsafe_demo demo -e "SELECT 1" > /dev/null 2>&1; do \
+		mysql --protocol=tcp -h 127.0.0.1 -u dbsafe -pdbsafe_demo demo -e "SELECT 1" > /dev/null 2>&1; do \
+		if ! docker compose -f docker-compose.demo.yml ps --status running | grep -q mysql-demo; then \
+			echo ""; echo "ERROR: MySQL container died. Check: docker logs dbsafe-mysql-demo-1"; exit 1; \
+		fi; \
 		printf "."; sleep 5; \
 	done
 	@echo ""

@@ -8,7 +8,7 @@ A MySQL 8.0 instance pre-loaded with ~2.4M rows of realistic e-commerce data, de
 make demo-up
 ```
 
-First run seeds ~2.56M rows and takes **3–5 minutes**. Subsequent `make demo-up` calls after a `demo-down` also reseed from scratch (tmpfs is ephemeral). You'll see dots while it waits, then the ready message.
+First run seeds ~2.56M rows and takes **~10–12 minutes on Apple Silicon, ~3–5 minutes on x86**. Subsequent `make demo-up` calls after a `demo-down` also reseed from scratch (tmpfs is ephemeral). You'll see dots while it waits, then the ready message.
 
 ## Run dbsafe commands
 
@@ -106,7 +106,7 @@ Stops the container and deletes the tmpfs volume. Everything is gone. Next `make
 |---------------|----------|---------|-------------------------------------------|
 | `orders`      | ~2.4M    | ~1.2 GB | Star table — triggers DANGEROUS DDL risk  |
 | `audit_log`   | ~250K    | ~77 MB  | DML demo — triggers CHUNKED at >100K rows |
-| `order_items` | ~300K    | ~30 MB  | 2 FK constraints (orders + products)      |
+| `order_items` | ~500K    | ~30 MB  | 2 FK constraints (orders + products)      |
 | `customers`   | ~10K     | ~3 MB   | FK target for orders                      |
 | `products`    | 1K       | <1 MB   | FK target for order_items                 |
 

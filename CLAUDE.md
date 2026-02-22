@@ -35,7 +35,7 @@ make tidy           # Tidy go.mod/go.sum
 A MySQL 8.0 instance pre-loaded with ~2.4M rows of realistic e-commerce data. See `DEMO.md` for the full usage guide.
 
 ```bash
-make demo-up       # Start MySQL container + seed data (3-5 min first run)
+make demo-up       # Start MySQL container + seed data (~10-12 min on Apple Silicon, ~3-5 min on x86)
 make demo-down     # Stop and remove container + data
 ```
 
@@ -344,6 +344,33 @@ pxc-node1:
 ```
 
 **ARM64 / Apple Silicon limitations**: `percona:8.0` has no ARM64 image (crashes immediately). `pxc-node1` bootstraps successfully on x86-64 but Galera's `asio` SSL network layer hangs non-deterministically under Rosetta 2. The current integration tests (`TestIntegration_StandaloneMySQL`, `TestIntegration_MySQLLTS`, `TestIntegration_DDLClassification`) only target `mysql-standalone` and `mysql-lts` and pass on Apple Silicon.
+
+**10. Deferred Index Creation for Bulk Loads**
+
+When bulk-loading into a large InnoDB table on tmpfs, secondary indexes during load cause two problems: (1) each inserted row must also update every index B-tree, slowing inserts dramatically; (2) with a large buffer pool, all dirty pages stay in memory and the checkpoint LSN never advances — the redo log fills up and MySQL crashes.
+
+**Fix**: create the table without secondary indexes, load all data in batched transactions, then add indexes afterward:
+
+```sql
+-- During seed: table created without secondary indexes
+CREATE TABLE orders (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  ...
+);
+
+-- Load data in 100K-row batches via stored procedure
+-- (each batch COMMITs, which advances the checkpoint LSN)
+
+-- After load: add secondary indexes
+ALTER TABLE orders
+  ADD INDEX idx_customer (customer_id),
+  ADD INDEX idx_status (status, created_at),
+  ...;
+```
+
+**Why batched COMMITs matter**: a single giant transaction holds all dirty pages until commit, blocking checkpointing. Committing every 100K rows lets InnoDB flush and reclaim redo log space.
+
+**Don't use `--innodb-redo-log-capacity`**: increasing the log size just delays the crash — the root cause is the checkpoint not advancing. Fix the load pattern instead.
 
 **6. Fixing Escaping Issues - Use Byte-Level Operations**
 

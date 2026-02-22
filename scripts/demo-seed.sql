@@ -129,9 +129,10 @@ FROM digits d1, digits d2, digits d3;
 --
 -- Build strategy:
 --   1. Seed 10,000 rows via 4-way cross-join on digits
---   2. Double 8 times using a stored procedure that commits every 100K rows
---      (keeps each transaction small → no redo log overflow)
---   3. Fix order_number uniqueness in batches, then add the UNIQUE index
+--   2. Double 8 times using a stored procedure that commits every 100K rows.
+--      Secondary indexes and FK are deferred until after the bulk load —
+--      InnoDB's bulk index build generates far less redo than per-row maintenance.
+--   3. Fix order_number uniqueness in batches, then add all indexes in one ALTER TABLE
 -- =============================================================================
 CREATE TABLE orders (
   id               INT UNSIGNED  NOT NULL AUTO_INCREMENT,
@@ -155,15 +156,8 @@ CREATE TABLE orders (
   updated_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   shipped_at       DATETIME,
   delivered_at     DATETIME,
-  PRIMARY KEY (id),
-  -- UNIQUE KEY added after data load (see ALTER TABLE below)
-  KEY idx_order_number  (order_number),
-  KEY idx_customer_id   (customer_id),
-  KEY idx_status        (status),
-  KEY idx_created_at    (created_at),
-  KEY idx_payment_method(payment_method),
-  KEY idx_status_created(status, created_at),
-  CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers (id)
+  PRIMARY KEY (id)
+  -- All secondary indexes and FK added after data load (see ALTER TABLE below)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 -- ---------------------------------------------------------------------------
@@ -231,9 +225,10 @@ FROM digits d1, digits d2, digits d3, digits d4;
 -- =============================================================================
 -- Stored procedures for safe batched doubling
 --
--- Each batch is 100K rows → ~60 MB redo log per COMMIT.
--- The WHERE id BETWEEN clause uses v_max_id captured at procedure START,
--- so newly-inserted rows (id > v_max_id) are never re-read as source rows.
+-- Secondary indexes are deferred (added after data load), so each batch only
+-- needs to maintain the PRIMARY KEY. The WHERE id BETWEEN clause uses v_max_id
+-- captured at procedure START so newly-inserted rows are never re-read as
+-- source rows.
 -- =============================================================================
 DELIMITER $$
 
@@ -308,11 +303,18 @@ DROP PROCEDURE demo_double_orders;
 DROP PROCEDURE demo_fix_order_numbers;
 
 -- ---------------------------------------------------------------------------
--- Promote idx_order_number to a UNIQUE constraint (all values now distinct).
--- InnoDB builds this index in one sorted pass — faster than per-insert checks.
+-- Add all secondary indexes and FK in one pass now that the bulk load is done.
+-- InnoDB builds each index via a sorted merge of the full table — far more
+-- efficient than maintaining indexes per-row during the doubling phase.
 -- ---------------------------------------------------------------------------
-ALTER TABLE orders DROP INDEX idx_order_number;
-ALTER TABLE orders ADD UNIQUE KEY uq_order_number (order_number);
+ALTER TABLE orders
+  ADD KEY        idx_customer_id    (customer_id),
+  ADD KEY        idx_status         (status),
+  ADD KEY        idx_created_at     (created_at),
+  ADD KEY        idx_payment_method (payment_method),
+  ADD KEY        idx_status_created (status, created_at),
+  ADD UNIQUE KEY uq_order_number    (order_number),
+  ADD CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customers (id);
 
 -- =============================================================================
 -- TABLE: order_items (~500K rows — 2 FK constraints for rich FK display demo)
