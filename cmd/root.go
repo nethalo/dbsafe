@@ -45,6 +45,8 @@ func init() {
 	rootCmd.PersistentFlags().StringP("socket", "S", "", "Unix socket path")
 	rootCmd.PersistentFlags().StringP("format", "f", "text", "Output format: text, plain, json, markdown")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Show additional debug info")
+	rootCmd.PersistentFlags().String("tls", "", "TLS mode: disabled, preferred, required, skip-verify, custom")
+	rootCmd.PersistentFlags().String("tls-ca", "", "Path to CA certificate PEM file (required when --tls=custom)")
 
 	// Bind flags to viper
 	viper.BindPFlag("host", rootCmd.PersistentFlags().Lookup("host"))
@@ -54,6 +56,8 @@ func init() {
 	viper.BindPFlag("socket", rootCmd.PersistentFlags().Lookup("socket"))
 	viper.BindPFlag("format", rootCmd.PersistentFlags().Lookup("format"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("tls", rootCmd.PersistentFlags().Lookup("tls"))
+	viper.BindPFlag("tls_ca", rootCmd.PersistentFlags().Lookup("tls-ca"))
 }
 
 func initConfig() {
@@ -90,6 +94,12 @@ func initConfig() {
 		}
 		if !rootCmd.PersistentFlags().Changed("format") && viper.IsSet("defaults.format") {
 			viper.Set("format", viper.GetString("defaults.format"))
+		}
+		if !rootCmd.PersistentFlags().Changed("tls") && viper.IsSet("connections.default.tls") {
+			viper.Set("tls", viper.GetString("connections.default.tls"))
+		}
+		if !rootCmd.PersistentFlags().Changed("tls-ca") && viper.IsSet("connections.default.tls_ca") {
+			viper.Set("tls_ca", viper.GetString("connections.default.tls_ca"))
 		}
 	}
 }

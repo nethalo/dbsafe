@@ -521,6 +521,10 @@ func TestDetect_Standalone(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM information_schema\\.PROCESSLIST").
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
 
+	// Mock basedir (RDS detection)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'basedir'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("basedir", "/usr/"))
+
 	info, err := Detect(db, false)
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
@@ -528,6 +532,163 @@ func TestDetect_Standalone(t *testing.T) {
 
 	if info.Type != Standalone {
 		t.Errorf("expected Type=Standalone, got %s", info.Type)
+	}
+	if info.IsCloudManaged {
+		t.Error("expected IsCloudManaged=false for local MySQL")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_AuroraWriter(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION() — Aurora format
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.mysql_aurora.3.04.0"))
+
+	// Mock read_only = OFF (writer)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != AuroraWriter {
+		t.Errorf("expected Type=AuroraWriter, got %s", info.Type)
+	}
+	if !info.IsCloudManaged {
+		t.Error("expected IsCloudManaged=true")
+	}
+	if info.CloudProvider != "aws-aurora" {
+		t.Errorf("expected CloudProvider=aws-aurora, got %s", info.CloudProvider)
+	}
+	if info.Version.AuroraVersion != "3.04.0" {
+		t.Errorf("expected AuroraVersion=3.04.0, got %s", info.Version.AuroraVersion)
+	}
+	if info.ReadOnly {
+		t.Error("expected ReadOnly=false for writer")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_AuroraReader(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION() — Aurora format
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.mysql_aurora.3.07.1"))
+
+	// Mock read_only = ON (reader/replica)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != AuroraReader {
+		t.Errorf("expected Type=AuroraReader, got %s", info.Type)
+	}
+	if !info.IsCloudManaged {
+		t.Error("expected IsCloudManaged=true")
+	}
+	if info.CloudProvider != "aws-aurora" {
+		t.Errorf("expected CloudProvider=aws-aurora, got %s", info.CloudProvider)
+	}
+	if info.Version.AuroraVersion != "3.07.1" {
+		t.Errorf("expected AuroraVersion=3.07.1, got %s", info.Version.AuroraVersion)
+	}
+	if !info.ReadOnly {
+		t.Error("expected ReadOnly=true for Aurora reader")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestDetect_RDS_Standalone(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	// Mock VERSION() — standard MySQL (not Aurora)
+	mock.ExpectQuery("SELECT VERSION\\(\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.35"))
+
+	// Mock read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
+
+	// Mock super_read_only
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
+
+	// Mock wsrep_on - not Galera
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'wsrep\\\\_on'").
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SHOW VARIABLES LIKE 'wsrep\\\\_on'").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock group_replication - not GR
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'group\\\\_replication\\\\_group\\\\_name'").
+		WillReturnError(sql.ErrNoRows)
+
+	// Mock SHOW REPLICA STATUS - not a replica
+	mock.ExpectQuery("SHOW REPLICA STATUS").
+		WillReturnError(fmt.Errorf("not a replica"))
+	mock.ExpectQuery("SHOW SLAVE STATUS").
+		WillReturnError(fmt.Errorf("not a replica"))
+
+	// Mock processlist - no binlog dump threads
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM information_schema.PROCESSLIST").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+
+	// Mock basedir — RDS marker
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'basedir'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
+			AddRow("basedir", "/rdsdbbin/mysql/"))
+
+	info, err := Detect(db, false)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+
+	if info.Type != Standalone {
+		t.Errorf("expected Type=Standalone, got %s", info.Type)
+	}
+	if !info.IsCloudManaged {
+		t.Error("expected IsCloudManaged=true for RDS")
+	}
+	if info.CloudProvider != "aws-rds" {
+		t.Errorf("expected CloudProvider=aws-rds, got %s", info.CloudProvider)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

@@ -32,7 +32,7 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintf(r.w, "| MySQL version | %s |\n\n", result.Version.String())
 
 	// Topology
-	if result.Topology.Type != topology.Standalone {
+	if result.Topology.Type != topology.Standalone || result.Topology.IsCloudManaged {
 		fmt.Fprintf(r.w, "## Topology\n\n")
 		fmt.Fprintf(r.w, "| Property | Value |\n|---|---|\n")
 		fmt.Fprintf(r.w, "| Type | %s |\n", formatTopoType(result.Topology))
@@ -44,6 +44,15 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 		case topology.GroupRepl:
 			fmt.Fprintf(r.w, "| Mode | %s |\n", result.Topology.GRMode)
 			fmt.Fprintf(r.w, "| Members | %d |\n", result.Topology.GRMemberCount)
+		case topology.AuroraWriter, topology.AuroraReader:
+			fmt.Fprintf(r.w, "| Provider | AWS Aurora MySQL |\n")
+			if result.Topology.Version.AuroraVersion != "" {
+				fmt.Fprintf(r.w, "| Aurora version | %s |\n", result.Topology.Version.AuroraVersion)
+			}
+		default:
+			if result.Topology.IsCloudManaged {
+				fmt.Fprintf(r.w, "| Provider | %s |\n", result.Topology.CloudProvider)
+			}
 		}
 		fmt.Fprintln(r.w)
 	}

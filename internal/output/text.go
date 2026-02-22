@@ -37,8 +37,8 @@ func (r *TextRenderer) RenderPlan(result *analyzer.Result) {
 	metaBox := BoxStyle.Width(width).Render(header + "\n" + strings.Join(metaLines, "\n"))
 	fmt.Fprintln(r.w, metaBox)
 
-	// Topology box (if not standalone)
-	if result.Topology.Type != topology.Standalone {
+	// Topology box (if not standalone, or if cloud-managed)
+	if result.Topology.Type != topology.Standalone || result.Topology.IsCloudManaged {
 		r.renderTopoBox(result, width)
 	}
 
@@ -110,6 +110,15 @@ func (r *TextRenderer) renderTopoBox(result *analyzer.Result, width int) {
 	case topology.AsyncReplica, topology.SemiSyncReplica:
 		if result.Topology.ReplicaLagSecs != nil {
 			lines = append(lines, r.labelValue("Replica lag:", fmt.Sprintf("%ds", *result.Topology.ReplicaLagSecs)))
+		}
+	case topology.AuroraWriter, topology.AuroraReader:
+		lines = append(lines, r.labelValue("Provider:", "AWS Aurora MySQL"))
+		if result.Topology.Version.AuroraVersion != "" {
+			lines = append(lines, r.labelValue("Aurora version:", result.Topology.Version.AuroraVersion))
+		}
+	default:
+		if result.Topology.IsCloudManaged {
+			lines = append(lines, r.labelValue("Provider:", result.Topology.CloudProvider))
 		}
 	}
 
@@ -285,6 +294,20 @@ func (r *TextRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topolog
 		if topo.IsPrimary {
 			lines = append(lines, r.labelValue("Role:", "Primary (has replicas)"))
 		}
+	case topology.AuroraWriter, topology.AuroraReader:
+		lines = append(lines, r.labelValue("Provider:", "AWS Aurora MySQL"))
+		if topo.Version.AuroraVersion != "" {
+			lines = append(lines, r.labelValue("Aurora version:", topo.Version.AuroraVersion))
+		}
+		role := "Writer"
+		if topo.Type == topology.AuroraReader {
+			role = "Reader (read replica)"
+		}
+		lines = append(lines, r.labelValue("Role:", role))
+	default:
+		if topo.IsCloudManaged {
+			lines = append(lines, r.labelValue("Provider:", topo.CloudProvider))
+		}
 	}
 
 	lines = append(lines, r.labelValue("Read only:", fmt.Sprintf("%v", topo.ReadOnly)))
@@ -324,7 +347,14 @@ func formatTopoType(topo *topology.Info) string {
 		return "Async Replication"
 	case topology.SemiSyncReplica:
 		return "Semi-sync Replication"
+	case topology.AuroraWriter:
+		return "Aurora MySQL (Writer)"
+	case topology.AuroraReader:
+		return "Aurora MySQL (Reader)"
 	default:
+		if topo.IsCloudManaged {
+			return fmt.Sprintf("Standalone (%s)", topo.CloudProvider)
+		}
 		return "Standalone"
 	}
 }

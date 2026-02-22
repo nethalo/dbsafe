@@ -64,6 +64,8 @@ var planCmd = &cobra.Command{
 			Password: viper.GetString("password"),
 			Database: viper.GetString("database"),
 			Socket:   viper.GetString("socket"),
+			TLSMode:  viper.GetString("tls"),
+			TLSCA:    viper.GetString("tls_ca"),
 		}
 
 		if connCfg.Host == "" && connCfg.Socket == "" {

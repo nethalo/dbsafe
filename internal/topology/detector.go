@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/nethalo/dbsafe/internal/mysql"
 )
@@ -18,6 +19,8 @@ const (
 	SemiSyncReplica Type = "semisync-replica"
 	Galera          Type = "galera"
 	GroupRepl       Type = "group-replication"
+	AuroraWriter    Type = "aurora-writer"
+	AuroraReader    Type = "aurora-reader"
 )
 
 // Info holds the full topology state.
@@ -47,6 +50,10 @@ type Info struct {
 	// General
 	ReadOnly      bool
 	SuperReadOnly bool
+
+	// Cloud
+	IsCloudManaged bool
+	CloudProvider  string // "aws-aurora", "aws-rds", ""
 }
 
 // Detect connects to MySQL and determines the topology.
@@ -66,6 +73,18 @@ func Detect(db *sql.DB, verbose bool) (*Info, error) {
 	info.ReadOnly = ro == "ON"
 	sro, _ := mysql.GetVariable(db, "super_read_only")
 	info.SuperReadOnly = sro == "ON"
+
+	// Aurora detection: must happen before Galera/GR since Aurora has its own replication model.
+	if version.IsAurora() {
+		info.IsCloudManaged = true
+		info.CloudProvider = "aws-aurora"
+		if info.ReadOnly {
+			info.Type = AuroraReader
+		} else {
+			info.Type = AuroraWriter
+		}
+		return info, nil
+	}
 
 	// Try Galera detection first (most specific)
 	detected, err := detectGalera(db, info, verbose)
@@ -96,6 +115,15 @@ func Detect(db *sql.DB, verbose bool) (*Info, error) {
 
 	// Default: standalone
 	info.Type = Standalone
+
+	// RDS detection (best-effort): check basedir for rdsdbbin marker.
+	// This annotates without changing topology type — RDS uses standard MySQL replication.
+	basedir, _ := mysql.GetVariable(db, "basedir")
+	if strings.Contains(basedir, "rdsdbbin") {
+		info.IsCloudManaged = true
+		info.CloudProvider = "aws-rds"
+	}
+
 	return info, nil
 }
 
@@ -208,7 +236,7 @@ func detectGroupReplication(db *sql.DB, info *Info) (bool, error) {
 
 	// Member count and role from performance_schema
 	rows, err := db.Query(`
-		SELECT MEMBER_ROLE, MEMBER_STATE 
+		SELECT MEMBER_ROLE, MEMBER_STATE
 		FROM performance_schema.replication_group_members
 		WHERE MEMBER_HOST = @@hostname AND MEMBER_PORT = @@port
 	`)
@@ -225,7 +253,7 @@ func detectGroupReplication(db *sql.DB, info *Info) (bool, error) {
 	// Total member count
 	var count int
 	err = db.QueryRow(`
-		SELECT COUNT(*) 
+		SELECT COUNT(*)
 		FROM performance_schema.replication_group_members
 		WHERE MEMBER_STATE = 'ONLINE'
 	`).Scan(&count)

@@ -37,6 +37,11 @@ const ptOSCTriggerRationale = "gh-ost cannot operate on tables with existing tri
 	"during the shadow table population, causing data corruption or errors. " +
 	"pt-online-schema-change supports --preserve-triggers to safely migrate tables that have triggers."
 
+// auroraGhostRationale explains why gh-ost cannot be used on Aurora MySQL.
+const auroraGhostRationale = "gh-ost is NOT compatible with Aurora MySQL: Aurora uses storage-layer " +
+	"replication instead of MySQL binary log replication. gh-ost relies on reading the binary log stream " +
+	"which is not accessible on Aurora. Use pt-online-schema-change instead."
+
 // ExecutionMethod is what dbsafe recommends.
 type ExecutionMethod string
 
@@ -180,8 +185,9 @@ func analyzeDDL(input Input, result *Result) {
 	validateColumnOperation(input, result)
 
 	// Classify using the DDL matrix
+	// Use EffectivePatch() so Aurora 8.0 is treated as MySQL 8.0.23 for algorithm selection.
 	v := input.Version
-	result.Classification = ClassifyDDLWithContext(input.Parsed, v.Major, v.Minor, v.Patch)
+	result.Classification = ClassifyDDLWithContext(input.Parsed, v.Major, v.Minor, v.EffectivePatch())
 
 	// Determine risk and method based on algorithm
 	// Note: Column validation may have already set Risk to RiskDangerous, which we preserve
@@ -443,6 +449,37 @@ func applyTopologyWarnings(input Input, result *Result) {
 		applyGRWarnings(input, result)
 	case topology.AsyncReplica, topology.SemiSyncReplica:
 		applyReplicationWarnings(input, result)
+	case topology.AuroraWriter, topology.AuroraReader:
+		applyAuroraWarnings(input, result)
+	}
+
+	// RDS-specific advisory: gh-ost needs extra flags on RDS managed MySQL.
+	if input.Topo.IsCloudManaged && input.Topo.CloudProvider == "aws-rds" && result.Method == ExecGhost {
+		result.ClusterWarnings = append(result.ClusterWarnings,
+			"AWS RDS: gh-ost requires --allow-on-master and --assume-rbr flags. Ensure binary logging is enabled and the IAM/DB user has REPLICATION SLAVE privilege.",
+		)
+	}
+}
+
+func applyAuroraWarnings(input Input, result *Result) {
+	// Warn if connected to an Aurora read replica — DDL/DML must run on writer.
+	if input.Topo.Type == topology.AuroraReader {
+		result.ClusterWarnings = append(result.ClusterWarnings,
+			"Connected to an Aurora READ REPLICA. DDL and DML must be executed on the writer instance.",
+		)
+	}
+
+	// gh-ost is incompatible with Aurora: Aurora uses storage-layer replication, not binlog streaming.
+	// Override to pt-osc and clear the now-invalid alternative.
+	if result.Method == ExecGhost {
+		result.ClusterWarnings = append(result.ClusterWarnings,
+			"gh-ost is NOT compatible with Aurora MySQL. Aurora uses storage-layer replication instead of MySQL binary log replication. Use pt-online-schema-change instead.",
+		)
+		result.Method = ExecPtOSC
+		result.AlternativeMethod = ""
+		result.AlternativeExecutionCommand = ""
+		result.MethodRationale = auroraGhostRationale
+		result.ExecutionCommand = generatePtOSCCommand(input, false)
 	}
 }
 

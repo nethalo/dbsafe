@@ -20,7 +20,8 @@
 
 - 🔍 **Algorithm detection** — INSTANT / INPLACE / COPY, per MySQL version
 - 🎯 **Risk classification** — Safe, Caution, or Dangerous
-- 🌐 **Topology aware** — Galera/PXC, Group Replication, async replicas
+- 🌐 **Topology aware** — Galera/PXC, Group Replication, async replicas, Aurora, RDS
+- ☁️ **Cloud MySQL ready** — Aurora MySQL, Amazon RDS, Cloud SQL, Azure MySQL (TLS support)
 - 📊 **Impact estimation** — table size, row count, replication lag
 - 📝 **Chunked scripts** — auto-generated batched DELETE/UPDATE for large operations
 - 🎨 **Multiple formats** — text, plain, JSON, Markdown (great for CI/CD)
@@ -80,13 +81,68 @@ dbsafe plan --file migration.sql
 
 ## 🐬 Supported Versions
 
-| MySQL Version | Support |
+| Environment | Support |
 |---|---|
 | MySQL 8.0.x | ✅ |
 | MySQL 8.4 LTS | ✅ |
+| Aurora MySQL 3.x (8.0 compat) | ✅ |
+| Amazon RDS MySQL 8.x | ✅ |
+| Google Cloud SQL MySQL 8.x | ✅ |
+| Azure Database for MySQL 8.x | ✅ |
 | Percona XtraDB Cluster 8.x | ✅ |
 | Group Replication 8.x | ✅ |
 | MySQL 5.7 / MariaDB | ❌ |
+
+---
+
+## ☁️ Cloud MySQL
+
+dbsafe works with all major cloud MySQL services. Most require TLS:
+
+```bash
+# Amazon RDS / Cloud SQL / Azure (TLS required)
+dbsafe plan --host mydb.rds.amazonaws.com --tls=required \
+  "ALTER TABLE orders ADD COLUMN archived_at DATETIME"
+
+# Aurora MySQL (auto-detected; gh-ost is replaced with pt-osc automatically)
+dbsafe plan --host cluster.cluster-xyz.us-east-1.rds.amazonaws.com \
+  --tls=required "ALTER TABLE users ADD INDEX idx_email (email)"
+
+# Custom CA certificate (e.g., self-signed or private CA)
+dbsafe plan --host mydb.example.com --tls=custom --tls-ca=/path/to/ca.pem \
+  "ALTER TABLE events DROP COLUMN legacy_col"
+```
+
+**TLS modes**: `disabled` · `preferred` · `required` · `skip-verify` · `custom`
+
+**Cloud tool compatibility**:
+
+| Service | gh-ost | pt-osc |
+|---|---|---|
+| Amazon RDS | ✅ (needs `--allow-on-master --assume-rbr`) | ✅ |
+| Aurora MySQL | ❌ (incompatible — storage-layer replication) | ✅ |
+| Google Cloud SQL | ✅ | ✅ |
+| Azure MySQL | ✅ | ✅ |
+
+**Config file with TLS**:
+
+```yaml
+connections:
+  default:
+    host: mydb.rds.amazonaws.com
+    port: 3306
+    user: dbsafe
+    database: myapp
+    tls: required        # or: preferred, skip-verify, custom
+    tls_ca: /path/ca.pem # only needed when tls: custom
+```
+
+**Aurora privileges** — `REPLICATION CLIENT` returns empty on Aurora; use `PROCESS` instead:
+
+```sql
+CREATE USER 'dbsafe'@'%' IDENTIFIED BY '<password>';
+GRANT SELECT, PROCESS ON *.* TO 'dbsafe'@'%';
+```
 
 ---
 

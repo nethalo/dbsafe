@@ -50,12 +50,15 @@ type jsonTableMeta struct {
 }
 
 type jsonTopology struct {
-	Type        string `json:"type"`
-	ClusterSize int    `json:"cluster_size,omitempty"`
-	OSUMethod   string `json:"osu_method,omitempty"`
-	NodeState   string `json:"node_state,omitempty"`
-	GRMode      string `json:"gr_mode,omitempty"`
-	ReadOnly    bool   `json:"read_only"`
+	Type           string `json:"type"`
+	ClusterSize    int    `json:"cluster_size,omitempty"`
+	OSUMethod      string `json:"osu_method,omitempty"`
+	NodeState      string `json:"node_state,omitempty"`
+	GRMode         string `json:"gr_mode,omitempty"`
+	ReadOnly       bool   `json:"read_only"`
+	IsCloudManaged bool   `json:"is_cloud_managed,omitempty"`
+	CloudProvider  string `json:"cloud_provider,omitempty"`
+	AuroraVersion  string `json:"aurora_version,omitempty"`
 }
 
 type jsonOperation struct {
@@ -113,8 +116,11 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 			Engine:       result.TableMeta.Engine,
 		},
 		Topology: jsonTopology{
-			Type:     string(result.Topology.Type),
-			ReadOnly: result.Topology.ReadOnly,
+			Type:           string(result.Topology.Type),
+			ReadOnly:       result.Topology.ReadOnly,
+			IsCloudManaged: result.Topology.IsCloudManaged,
+			CloudProvider:  result.Topology.CloudProvider,
+			AuroraVersion:  result.Topology.Version.AuroraVersion,
 		},
 		Risk:                        string(result.Risk),
 		Method:                      string(result.Method),
@@ -189,12 +195,17 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 }
 
 func (r *JSONRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topology.Info) {
-	out := map[string]interface{}{
+	out := map[string]any{
 		"host":      conn.Host,
 		"port":      conn.Port,
 		"version":   topo.Version.String(),
 		"topology":  string(topo.Type),
 		"read_only": topo.ReadOnly,
+	}
+
+	if topo.IsCloudManaged {
+		out["is_cloud_managed"] = true
+		out["cloud_provider"] = topo.CloudProvider
 	}
 
 	switch topo.Type {
@@ -208,6 +219,10 @@ func (r *JSONRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topolog
 		out["gr_mode"] = topo.GRMode
 		out["member_count"] = topo.GRMemberCount
 		out["member_role"] = topo.GRMemberRole
+	case topology.AuroraWriter, topology.AuroraReader:
+		if topo.Version.AuroraVersion != "" {
+			out["aurora_version"] = topo.Version.AuroraVersion
+		}
 	}
 
 	enc := json.NewEncoder(r.w)

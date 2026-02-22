@@ -27,9 +27,12 @@ func (r *PlainRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintln(r.w)
 
 	// Topology
-	if result.Topology.Type != topology.Standalone {
+	if result.Topology.Type != topology.Standalone || result.Topology.IsCloudManaged {
 		fmt.Fprintf(r.w, "--- Topology ---\n")
 		fmt.Fprintf(r.w, "Type:          %s\n", formatTopoType(result.Topology))
+		if result.Topology.IsCloudManaged {
+			fmt.Fprintf(r.w, "Cloud:         %s\n", result.Topology.CloudProvider)
+		}
 		fmt.Fprintln(r.w)
 	}
 

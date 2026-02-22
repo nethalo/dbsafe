@@ -9,14 +9,15 @@ import (
 
 func TestParseVersion(t *testing.T) {
 	tests := []struct {
-		name       string
-		raw        string
-		wantMajor  int
-		wantMinor  int
-		wantPatch  int
-		wantFlavor string
-		wantIsLTS  bool
-		wantErr    bool
+		name             string
+		raw              string
+		wantMajor        int
+		wantMinor        int
+		wantPatch        int
+		wantFlavor       string
+		wantIsLTS        bool
+		wantAuroraVersion string
+		wantErr          bool
 	}{
 		{
 			name:       "MySQL 8.0.35",
@@ -64,6 +65,26 @@ func TestParseVersion(t *testing.T) {
 			wantIsLTS:  false,
 		},
 		{
+			name:              "Aurora MySQL 3.04.0",
+			raw:               "8.0.mysql_aurora.3.04.0",
+			wantMajor:         8,
+			wantMinor:         0,
+			wantPatch:         0,
+			wantFlavor:        "aurora-mysql",
+			wantIsLTS:         false,
+			wantAuroraVersion: "3.04.0",
+		},
+		{
+			name:              "Aurora MySQL 3.07.1",
+			raw:               "8.0.mysql_aurora.3.07.1",
+			wantMajor:         8,
+			wantMinor:         0,
+			wantPatch:         0,
+			wantFlavor:        "aurora-mysql",
+			wantIsLTS:         false,
+			wantAuroraVersion: "3.07.1",
+		},
+		{
 			name:    "invalid version",
 			raw:     "not-a-version",
 			wantErr: true,
@@ -102,6 +123,9 @@ func TestParseVersion(t *testing.T) {
 			}
 			if v.IsLTS != tt.wantIsLTS {
 				t.Errorf("IsLTS = %v, want %v", v.IsLTS, tt.wantIsLTS)
+			}
+			if v.AuroraVersion != tt.wantAuroraVersion {
+				t.Errorf("AuroraVersion = %q, want %q", v.AuroraVersion, tt.wantAuroraVersion)
 			}
 			if v.Raw != tt.raw {
 				t.Errorf("Raw = %q, want %q", v.Raw, tt.raw)
@@ -200,11 +224,83 @@ func TestServerVersion_FeatureSupport(t *testing.T) {
 	}
 }
 
+func TestServerVersion_IsAurora(t *testing.T) {
+	tests := []struct {
+		name string
+		v    ServerVersion
+		want bool
+	}{
+		{"aurora-mysql flavor", ServerVersion{Flavor: "aurora-mysql"}, true},
+		{"mysql flavor", ServerVersion{Flavor: "mysql"}, false},
+		{"percona flavor", ServerVersion{Flavor: "percona"}, false},
+		{"empty flavor", ServerVersion{}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.v.IsAurora(); got != tt.want {
+				t.Errorf("IsAurora() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestServerVersion_EffectivePatch(t *testing.T) {
+	tests := []struct {
+		name string
+		v    ServerVersion
+		want int
+	}{
+		{
+			name: "Aurora 8.0 returns 23",
+			v:    ServerVersion{Major: 8, Minor: 0, Patch: 0, Flavor: "aurora-mysql"},
+			want: 23,
+		},
+		{
+			name: "standard MySQL uses actual Patch",
+			v:    ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"},
+			want: 35,
+		},
+		{
+			name: "MySQL 8.4 uses actual Patch",
+			v:    ServerVersion{Major: 8, Minor: 4, Patch: 0, Flavor: "mysql"},
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.v.EffectivePatch(); got != tt.want {
+				t.Errorf("EffectivePatch() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestServerVersion_String(t *testing.T) {
-	v := ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "percona-xtradb-cluster"}
-	want := "8.0.35 (percona-xtradb-cluster)"
-	if got := v.String(); got != want {
-		t.Errorf("String() = %q, want %q", got, want)
+	tests := []struct {
+		name string
+		v    ServerVersion
+		want string
+	}{
+		{
+			name: "standard MySQL",
+			v:    ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "percona-xtradb-cluster"},
+			want: "8.0.35 (percona-xtradb-cluster)",
+		},
+		{
+			name: "Aurora MySQL",
+			v:    ServerVersion{Major: 8, Minor: 0, Patch: 0, Flavor: "aurora-mysql", AuroraVersion: "3.04.0"},
+			want: "8.0 (aurora-mysql 3.04.0)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.v.String(); got != tt.want {
+				t.Errorf("String() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -10,17 +10,36 @@ import (
 
 // ServerVersion represents a parsed MySQL version.
 type ServerVersion struct {
-	Raw    string // e.g. "8.0.35-27-Percona XtraDB Cluster"
-	Major  int    // 8
-	Minor  int    // 0
-	Patch  int    // 35
-	Flavor string // "mysql", "percona", "percona-xtradb-cluster"
-	IsLTS  bool   // true for 8.4.x
+	Raw           string // e.g. "8.0.35-27-Percona XtraDB Cluster"
+	Major         int    // 8
+	Minor         int    // 0
+	Patch         int    // 35 (0 for Aurora)
+	Flavor        string // "mysql", "percona", "percona-xtradb-cluster", "aurora-mysql"
+	IsLTS         bool   // true for 8.4.x
+	AuroraVersion string // e.g., "3.04.0" (empty for non-Aurora)
 }
 
 // String returns a human-readable version string.
 func (v ServerVersion) String() string {
+	if v.AuroraVersion != "" {
+		return fmt.Sprintf("%d.%d (aurora-mysql %s)", v.Major, v.Minor, v.AuroraVersion)
+	}
 	return fmt.Sprintf("%d.%d.%d (%s)", v.Major, v.Minor, v.Patch, v.Flavor)
+}
+
+// IsAurora returns true if this is an Aurora MySQL instance.
+func (v ServerVersion) IsAurora() bool {
+	return v.Flavor == "aurora-mysql"
+}
+
+// EffectivePatch returns the MySQL-compatible patch version for DDL matrix lookups.
+// Aurora 3.x (MySQL 8.0 compat) is based on MySQL 8.0.23, so we use 23 as the
+// effective patch level for algorithm classification.
+func (v ServerVersion) EffectivePatch() int {
+	if v.IsAurora() && v.Major == 8 && v.Minor == 0 {
+		return 23
+	}
+	return v.Patch
 }
 
 // AtLeast returns true if the server version is >= the given version.
@@ -65,6 +84,19 @@ func GetServerVersion(db *sql.DB) (ServerVersion, error) {
 // ParseVersion parses a MySQL version string.
 func ParseVersion(raw string) (ServerVersion, error) {
 	v := ServerVersion{Raw: raw}
+
+	// Check for Aurora MySQL first (e.g., "8.0.mysql_aurora.3.04.0")
+	// Must be checked before the general regex since Aurora versions don't have a numeric patch.
+	auroraRe := regexp.MustCompile(`^(\d+)\.(\d+)\.mysql_aurora\.(\d+\.\d+\.\d+)`)
+	if m := auroraRe.FindStringSubmatch(raw); len(m) >= 4 {
+		v.Major, _ = strconv.Atoi(m[1])
+		v.Minor, _ = strconv.Atoi(m[2])
+		v.Patch = 0 // Aurora doesn't map to MySQL patch versions
+		v.Flavor = "aurora-mysql"
+		v.AuroraVersion = m[3]
+		v.IsLTS = false // Aurora doesn't follow MySQL LTS schedule
+		return v, nil
+	}
 
 	// Extract major.minor.patch from the beginning
 	re := regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)
