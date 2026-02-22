@@ -180,6 +180,8 @@ go test ./...                          # unit tests (~2s)
 go test -bench=. -benchmem ./internal/...  # benchmarks
 ```
 
+Integration tests verified against MySQL 8.0 standalone and MySQL 8.4 LTS. See TESTING.md for Apple Silicon / ARM64 container notes.
+
 ---
 
 ## 🤝 Contributing

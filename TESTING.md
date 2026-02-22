@@ -4,20 +4,24 @@ Complete guide to testing dbsafe - from quick unit tests to comprehensive integr
 
 ## ✅ Status: All Tests Passing
 
-**Last verified**: 2026-02-15
+**Last verified**: 2026-02-22
 
 - ✅ **Unit Tests**: All passing (96.6% parser, 94.9% analyzer, 93.0% topology, 85.5% mysql)
-- ✅ **Integration Tests**: Verified working with real MySQL 8.0 containers
+- ✅ **Integration Tests**: Verified working with MySQL 8.0 and MySQL 8.4 LTS containers
 - ✅ **Benchmarks**: 28 benchmarks tracking performance
 - ✅ **Fuzz Tests**: 7 fuzz functions with 50+ seed cases
 
 **Integration test results**:
 ```
-✓ TestIntegration_StandaloneMySQL (0.25s)
+✓ TestIntegration_StandaloneMySQL (1.39s)
   - Topology detection: PASS
   - Version parsing: PASS
   - Metadata collection: PASS
   - DDL/DML analysis: PASS
+
+✓ TestIntegration_MySQLLTS (0.10s)
+  - Version detection (8.4 LTS): PASS
+  - IsLTS flag: PASS
 
 ✓ TestIntegration_DDLClassification (0.01s)
   - INSTANT algorithm detection: PASS
@@ -129,12 +133,12 @@ docker-compose -f docker-compose.test.yml down -v
 - ✅ End-to-end analysis workflows
 
 **MySQL topologies covered**:
-1. MySQL 8.0 Standalone
-2. MySQL 8.4 LTS
-3. Percona Server 8.0
-4. Percona XtraDB Cluster (Galera)
-5. Group Replication
-6. Async Replication (Primary + Replica)
+1. MySQL 8.0 Standalone ✅
+2. MySQL 8.4 LTS ✅
+3. Percona Server 8.0 ⚠️ (no ARM64 image — skips on Apple Silicon)
+4. Percona XtraDB Cluster (Galera) ⚠️ (Galera network layer flaky under Rosetta 2)
+5. Group Replication ✅ (container starts; no test yet)
+6. Async Replication (Primary + Replica) ✅ (containers start; no test yet)
 
 ### 3. Benchmarks ⚡
 

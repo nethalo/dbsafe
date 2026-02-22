@@ -8,6 +8,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-22
+
+### Added
+- Cloud MySQL support: TLS (`--tls`, `--tls-ca` flags), Aurora MySQL auto-detection (topology `AuroraWriter`/`AuroraReader`, gh-ost replaced with pt-osc automatically), Amazon RDS detection via `basedir`
+- Full-pipeline regression test suite: 26 end-to-end cases covering DDL/DML across all supported MySQL version ranges and topology types
+- Parser tests for detail fields and previously uncovered branches (ADD/DROP PARTITION, ENGINE, ROW_FORMAT, ALTER COLUMN SET/DROP DEFAULT)
+
+### Fixed
+- Integration test containers on Apple Silicon:
+  - `mysql-lts` (8.4): removed `tmpfs` (ioctl incompatibility with macOS Docker Desktop), added `test/mysql84.cnf` config mount to enable `mysql_native_password` for plain TCP auth
+  - `pxc-node1`: removed `tmpfs` (permission denied on PXC init), added required `MYSQL_DATABASE`/`MYSQL_USER`/`MYSQL_PASSWORD` env vars and healthcheck, removed redundant bootstrap SQL volume
+  - `waitForMySQL`: fixed connection leak — `defer db.Close()` inside a retry loop held up to 30 connections open until the function returned; now closes explicitly per iteration
+
+### Changed
+- `test/pxc-bootstrap.sql` replaced: was an empty directory (crashed PXC entrypoint), now a valid SQL file
+- TESTING.md documents Apple Silicon container limitations (Percona no ARM64 image, PXC Galera flaky under Rosetta 2)
+
 ## [0.2.8] - 2026-02-21
 
 ### Fixed
@@ -160,6 +177,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - Output formats: text, plain, JSON, markdown
 - GoReleaser config and GitHub Actions release workflow
 
+[0.3.0]: https://github.com/nethalo/dbsafe/compare/v0.2.8...v0.3.0
 [0.2.8]: https://github.com/nethalo/dbsafe/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/nethalo/dbsafe/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/nethalo/dbsafe/compare/v0.2.5...v0.2.6
