@@ -303,6 +303,14 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 		result.DDLOp = MultipleOps
 		for _, opt := range alter.AlterOptions {
 			result.DDLOperations = append(result.DDLOperations, classifySingleAlterOp(opt))
+			// Propagate AUTO_INCREMENT flag so the analyzer can apply the correct
+			// INPLACE+SHARED classification even inside a multi-op ALTER.
+			if addCols, ok := opt.(*sqlparser.AddColumns); ok {
+				if len(addCols.Columns) > 0 && addCols.Columns[0].Type.Options != nil &&
+					addCols.Columns[0].Type.Options.Autoincrement {
+					result.HasAutoIncrement = true
+				}
+			}
 		}
 		return
 	}

@@ -560,8 +560,10 @@ func TestSpec_2_3_ReplacePrimaryKey_IsInplace(t *testing.T) {
 // Section 3.1 (new): ADD COLUMN with AUTO_INCREMENT edge case
 // =============================================================
 
-// 3.1 ADD COLUMN with AUTO_INCREMENT — must override to COPY+SHARED
-func TestSpec_3_1_AddColumnAutoIncrement_IsCopy(t *testing.T) {
+// 3.1 ADD COLUMN with AUTO_INCREMENT — must override to INPLACE+SHARED (not INSTANT, not COPY).
+// Per MySQL 8.0 Table 17.18: "Adding an AUTO_INCREMENT column: In Place=Yes, Lock=SHARED minimum,
+// Rebuilds Table=Yes, Concurrent DML=No."
+func TestSpec_3_1_AddColumnAutoIncrement_IsInplace(t *testing.T) {
 	input := Input{
 		Parsed: &parser.ParsedSQL{
 			Type:             parser.DDL,
@@ -583,8 +585,8 @@ func TestSpec_3_1_AddColumnAutoIncrement_IsCopy(t *testing.T) {
 	}
 	result := Analyze(input)
 
-	if result.Classification.Algorithm != AlgoCopy {
-		t.Errorf("ADD COLUMN AUTO_INCREMENT: Algorithm = %q, want COPY", result.Classification.Algorithm)
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("ADD COLUMN AUTO_INCREMENT: Algorithm = %q, want INPLACE", result.Classification.Algorithm)
 	}
 	if result.Classification.Lock != LockShared {
 		t.Errorf("ADD COLUMN AUTO_INCREMENT: Lock = %q, want SHARED", result.Classification.Lock)
@@ -593,7 +595,42 @@ func TestSpec_3_1_AddColumnAutoIncrement_IsCopy(t *testing.T) {
 		t.Error("ADD COLUMN AUTO_INCREMENT: RebuildsTable = false, want true")
 	}
 	if len(result.Warnings) == 0 {
-		t.Error("ADD COLUMN AUTO_INCREMENT: expected warning about AUTO_INCREMENT forcing COPY")
+		t.Error("ADD COLUMN AUTO_INCREMENT: expected warning about INPLACE+SHARED requirement")
+	}
+}
+
+// 3.1b ADD COLUMN AUTO_INCREMENT + ADD UNIQUE KEY (compound ALTER) — INPLACE+SHARED.
+// The common pattern of adding an AUTO_INCREMENT column alongside its required UNIQUE KEY.
+// Per MySQL 8.0 Table 17.18: both ops are INPLACE; AUTO_INCREMENT requires SHARED lock.
+func TestSpec_3_1b_AddColumnAutoIncrementWithUniqueKey(t *testing.T) {
+	// Simulate the compound ALTER parsed as MultipleOps with HasAutoIncrement propagated.
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:             parser.DDL,
+			RawSQL:           "ALTER TABLE t ADD COLUMN seq_id INT NOT NULL AUTO_INCREMENT, ADD UNIQUE KEY (seq_id)",
+			Table:            "t",
+			DDLOp:            parser.MultipleOps,
+			DDLOperations:    []parser.DDLOperation{parser.AddColumn, parser.AddIndex},
+			HasAutoIncrement: true,
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "t",
+			Columns:  []mysql.ColumnInfo{{Name: "id", Type: "int", Nullable: false, Position: 1}},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("ADD COLUMN AUTO_INCREMENT + ADD UNIQUE KEY: Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockShared {
+		t.Errorf("ADD COLUMN AUTO_INCREMENT + ADD UNIQUE KEY: Lock = %q, want SHARED", result.Classification.Lock)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Error("ADD COLUMN AUTO_INCREMENT + ADD UNIQUE KEY: RebuildsTable = false, want true")
 	}
 }
 

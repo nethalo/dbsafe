@@ -294,18 +294,25 @@ func analyzeDDL(input Input, result *Result) {
 		}
 	}
 
-	// For ADD COLUMN with AUTO_INCREMENT: InnoDB requires the column to be a key,
-	// which forces a full table rebuild (COPY algorithm with SHARED lock).
+	// For ADD COLUMN with AUTO_INCREMENT: requires INPLACE with SHARED lock minimum and
+	// full table rebuild. Concurrent DML is not permitted (MySQL 8.0 Table 17.18).
 	if input.Parsed.DDLOp == parser.AddColumn && input.Parsed.HasAutoIncrement {
 		result.Classification = DDLClassification{
-			Algorithm:     AlgoCopy,
+			Algorithm:     AlgoInplace,
 			Lock:          LockShared,
 			RebuildsTable: true,
-			Notes:         "ADD COLUMN with AUTO_INCREMENT requires a full table rebuild: InnoDB demands AUTO_INCREMENT columns be indexed (part of the primary key). INSTANT/INPLACE is not available.",
+			Notes:         "ADD COLUMN with AUTO_INCREMENT: INPLACE with SHARED lock minimum. Concurrent DML not permitted. Full table rebuild required.",
 		}
 		result.Warnings = append(result.Warnings,
-			"AUTO_INCREMENT column detected: cannot use INSTANT or INPLACE. InnoDB requires AUTO_INCREMENT columns to be part of an index, forcing a full table rebuild (COPY with SHARED lock).",
+			"AUTO_INCREMENT column: INPLACE with LOCK=SHARED required. Concurrent DML (writes) are blocked during the rebuild.",
 		)
+	}
+
+	// For MULTIPLE_OPS: classify each sub-operation individually and return the most
+	// restrictive combined result. This handles common compound patterns such as
+	// ADD COLUMN AUTO_INCREMENT + ADD UNIQUE KEY without falling back to the COPY default.
+	if input.Parsed.DDLOp == parser.MultipleOps && len(input.Parsed.DDLOperations) > 0 {
+		result.Classification = aggregateMultipleOps(input.Parsed.DDLOperations, input.Parsed.HasAutoIncrement, v)
 	}
 
 	// For MODIFY COLUMN with FIRST/AFTER: column reorder forces a table rebuild.
@@ -605,6 +612,48 @@ func isStringType(colType string) bool {
 		}
 	}
 	return false
+}
+
+// aggregateMultipleOps classifies a MULTIPLE_OPS ALTER TABLE by classifying each sub-operation
+// individually and returning the most restrictive combined result. This prevents multi-op
+// statements from falling back to the COPY default when all sub-ops actually support INPLACE.
+//
+// Algorithm precedence (most to least restrictive): COPY > INPLACE > INSTANT
+// Lock precedence (most to least restrictive): EXCLUSIVE > SHARED > NONE
+//
+// Special handling: if hasAutoIncrement is true, the ADD COLUMN sub-op is classified as
+// INPLACE+SHARED+rebuild rather than the matrix default of INSTANT (MySQL 8.0 Table 17.18).
+func aggregateMultipleOps(ops []parser.DDLOperation, hasAutoIncrement bool, v mysql.ServerVersion) DDLClassification {
+	algoPriority := map[Algorithm]int{AlgoInstant: 0, AlgoInplace: 1, AlgoCopy: 2}
+	lockPriority := map[LockLevel]int{LockNone: 0, LockShared: 1, LockExclusive: 2}
+
+	combined := DDLClassification{
+		Algorithm: AlgoInstant,
+		Lock:      LockNone,
+	}
+
+	for _, op := range ops {
+		var cls DDLClassification
+		if op == parser.AddColumn && hasAutoIncrement {
+			// AUTO_INCREMENT ADD COLUMN: INPLACE+SHARED+rebuild (not INSTANT from the matrix).
+			cls = DDLClassification{Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: true}
+		} else {
+			cls = ClassifyDDL(op, v.Major, v.Minor, v.EffectivePatch())
+		}
+
+		if algoPriority[cls.Algorithm] > algoPriority[combined.Algorithm] {
+			combined.Algorithm = cls.Algorithm
+		}
+		if lockPriority[cls.Lock] > lockPriority[combined.Lock] {
+			combined.Lock = cls.Lock
+		}
+		if cls.RebuildsTable {
+			combined.RebuildsTable = true
+		}
+	}
+
+	combined.Notes = "Combined algorithm and lock derived from the most restrictive sub-operation."
+	return combined
 }
 
 // findColumnType returns the type string for a column by name, or empty if not found.

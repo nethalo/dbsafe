@@ -475,16 +475,16 @@ func TestRegression_FullPipeline(t *testing.T) {
 			wantDDLOp:      parser.DropIndex,
 		},
 		{
-			// Multi-op ALTER → parser sets DDLOp=MultipleOps (not OtherDDL).
-			// Matrix has no MultipleOps entry → falls back to COPY+SHARED (safe default).
+			// Multi-op ALTER → parser sets DDLOp=MultipleOps.
+			// MULTIPLE_OPS aggregation: ADD COLUMN (INSTANT) + ADD INDEX (INPLACE) → INPLACE.
 			// The "could not be fully parsed" warning is ONLY for OtherDDL, not MultipleOps.
-			name:           "25. Multiple ALTERs → MultipleOps, COPY fallback, no parse-error warning",
+			name:           "25. Multiple ALTERs → MultipleOps, aggregated INPLACE, no parse-error warning",
 			sql:            "ALTER TABLE orders ADD COLUMN notes TEXT, ADD INDEX idx_notes (notes)",
 			version:        v8_0_35,
 			topoType:       topology.Standalone,
 			tableSizeBytes: small,
 			wantDDLOp:      parser.MultipleOps,
-			wantAlgo:       AlgoCopy, // matrix default for unknown operations
+			wantAlgo:       AlgoInplace, // ADD COLUMN=INSTANT, ADD INDEX=INPLACE → max=INPLACE
 			wantNoWarningSubstr: []string{"could not be fully parsed"},
 		},
 		{

@@ -858,6 +858,24 @@ func TestParse_AddColumnAutoIncrement(t *testing.T) {
 	}
 }
 
+// TestParse_MultipleOps_AutoIncrementPropagated verifies that HasAutoIncrement is set
+// when ADD COLUMN AUTO_INCREMENT appears as part of a multi-op ALTER TABLE.
+func TestParse_MultipleOps_AutoIncrementPropagated(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ADD COLUMN seq_id INT NOT NULL AUTO_INCREMENT, ADD UNIQUE KEY (seq_id)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != MultipleOps {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, MultipleOps)
+	}
+	if !result.HasAutoIncrement {
+		t.Errorf("HasAutoIncrement = false, want true (should be propagated from ADD COLUMN)")
+	}
+	if len(result.DDLOperations) != 2 {
+		t.Errorf("DDLOperations len = %d, want 2", len(result.DDLOperations))
+	}
+}
+
 // TestParse_ChangeIndexType verifies that DROP INDEX + ADD INDEX on the same name
 // is detected as ChangeIndexType.
 func TestParse_ChangeIndexType(t *testing.T) {
