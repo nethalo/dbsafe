@@ -399,6 +399,38 @@ if input.Parsed.DDLOp == parser.ChangeColumn && input.Parsed.NewColumnType != ""
 
 The comparison strips spaces and is case-insensitive to handle MySQL returning `decimal(12,2)` while Vitess may produce `DECIMAL(12,2)`.
 
+**12. Vitess ALTER TABLE RENAME TO — `*sqlparser.RenameTableName`**
+
+`ALTER TABLE t RENAME TO new_t` goes through `classifyAlterTable → classifySingleAlterOp`. Vitess represents the RENAME clause as `*sqlparser.RenameTableName` in `alter.AlterOptions` — a distinct type from `*sqlparser.RenameTable` which covers the standalone `RENAME TABLE` statement. The type switch in `classifySingleAlterOp` must handle both:
+
+```go
+case *sqlparser.RenameTableName:  // ALTER TABLE ... RENAME TO
+    return RenameTable
+// handled separately in Parse():
+case *sqlparser.RenameTable:      // standalone RENAME TABLE
+    result.DDLOp = RenameTable
+```
+
+**13. Live Metadata Override Pattern for DDL Matrix Baselines**
+
+The DDL matrix covers the "worst case" for each operation. When live metadata shows a less destructive case, `analyzeDDL` overrides the classification after `ClassifyDDLWithContext`. Pattern:
+
+```go
+// Matrix baseline = COPY (worst case: cross-engine conversion)
+// Live metadata shows same engine → override to INPLACE (null rebuild = FORCE)
+if input.Parsed.DDLOp == parser.ChangeEngine &&
+    input.Parsed.NewEngine != "" &&
+    strings.EqualFold(input.Parsed.NewEngine, input.Meta.Engine) {
+    result.Classification = DDLClassification{Algorithm: AlgoInplace, ...}
+}
+```
+
+Other examples of this pattern already in the codebase:
+- `ChangeColumn`: INPLACE (rename-only) vs COPY (type change) — checked via `findColumnType`
+- `AddForeignKey`: INPLACE (fk_checks=OFF) vs COPY (fk_checks=ON) — checked via `ForeignKeyChecksDisabled`
+- `AddPrimaryKey`: INPLACE vs COPY — when any PK column is nullable in live schema
+- `ConvertCharset`: INPLACE vs COPY — depending on whether indexed string columns exist
+
 **6. Fixing Escaping Issues - Use Byte-Level Operations**
 
 When shell/sed/perl escaping becomes confusing, use Python byte mode:
