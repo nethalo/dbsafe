@@ -29,3 +29,7 @@ dbsafe-plan-*.sql
 
 # GoReleaser
 dist/
+
+# Claude Code (local dev only)
+CLAUDE.md
+.claude/
