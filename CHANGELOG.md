@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-02-23
+
+### Fixed
+- `CHANGE COLUMN` was incorrectly classified as `INSTANT` for MySQL 8.0.29+ and 8.4 LTS — `INSTANT` is never valid for this operation (#18)
+- Rename-only `CHANGE COLUMN` (same data type) now correctly reports `INPLACE`; type-changing `CHANGE COLUMN` now correctly reports `COPY` with `SHARED` lock and table rebuild
+- Added runtime type-comparison logic: dbsafe compares the existing column type (from `INFORMATION_SCHEMA`) against the new type in the SQL and upgrades to `COPY` when they differ, with a warning showing the detected change (e.g. `decimal(12,2) → decimal(14,4)`)
+
 ## [0.3.0] - 2026-02-22
 
 ### Added
@@ -177,6 +184,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - Output formats: text, plain, JSON, markdown
 - GoReleaser config and GitHub Actions release workflow
 
+[0.3.1]: https://github.com/nethalo/dbsafe/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/nethalo/dbsafe/compare/v0.2.8...v0.3.0
 [0.2.8]: https://github.com/nethalo/dbsafe/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/nethalo/dbsafe/compare/v0.2.6...v0.2.7

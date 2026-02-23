@@ -372,6 +372,33 @@ ALTER TABLE orders
 
 **Don't use `--innodb-redo-log-capacity`**: increasing the log size just delays the crash — the root cause is the checkpoint not advancing. Fix the load pattern instead.
 
+**11. CHANGE COLUMN Type Detection Pattern**
+
+`CHANGE COLUMN` is never `INSTANT`. The analyzer distinguishes two cases using live schema metadata:
+
+- **Rename-only (same type)**: `INPLACE`, no rebuild, no lock
+- **Type change**: `COPY`, `SHARED` lock, full table rebuild
+
+The parser extracts the new column type into `ParsedSQL.NewColumnType` (lowercased, via Vitess `ColumnType.Format`). The analyzer compares it against the existing type from `INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE`:
+
+```go
+// In parser/sql.go — populate NewColumnType for CHANGE COLUMN:
+typeBuf := sqlparser.NewTrackedBuffer(nil)
+opt.NewColDefinition.Type.Format(typeBuf)
+result.NewColumnType = strings.ToLower(typeBuf.String())
+
+// In analyzer/analyzer.go — after ClassifyDDLWithContext:
+if input.Parsed.DDLOp == parser.ChangeColumn && input.Parsed.NewColumnType != "" {
+    if oldType := findColumnType(input.Meta.Columns, input.Parsed.OldColumnName); oldType != "" {
+        if !strings.EqualFold(strings.ReplaceAll(oldType, " ", ""), strings.ReplaceAll(input.Parsed.NewColumnType, " ", "")) {
+            // override to COPY + warn
+        }
+    }
+}
+```
+
+The comparison strips spaces and is case-insensitive to handle MySQL returning `decimal(12,2)` while Vitess may produce `DECIMAL(12,2)`.
+
 **6. Fixing Escaping Issues - Use Byte-Level Operations**
 
 When shell/sed/perl escaping becomes confusing, use Python byte mode:

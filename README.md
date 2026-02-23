@@ -67,6 +67,9 @@ dbsafe plan "ALTER TABLE users ADD COLUMN email VARCHAR(255)"
 # DDL analysis
 dbsafe plan "ALTER TABLE orders ADD INDEX idx_created (created_at)"
 
+# CHANGE COLUMN — detects rename-only (INPLACE) vs type change (COPY) using live schema
+dbsafe plan "ALTER TABLE orders CHANGE COLUMN total_amount amount DECIMAL(14,4)"
+
 # DML with chunked script generation
 dbsafe plan "DELETE FROM logs WHERE created_at < '2023-01-01'"
 
