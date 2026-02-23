@@ -386,18 +386,75 @@ func TestSpec_3_5_ColumnReorder_TypeChangeOverridesReorder(t *testing.T) {
 // =============================================================
 
 // 5.1 Adding a Foreign Key — INPLACE, LOCK=NONE, no rebuild (all versions)
-func TestSpec_5_1_AddForeignKey(t *testing.T) {
+// 5.1 matrix baseline: INPLACE+NONE (applies only when foreign_key_checks=OFF).
+// The Analyze() path overrides this based on the live server's foreign_key_checks value.
+func TestSpec_5_1_AddForeignKey_MatrixBaseline(t *testing.T) {
 	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
 		c := ClassifyDDL(parser.AddForeignKey, v.Major, v.Minor, v.Patch)
 		if c.Algorithm != AlgoInplace {
-			t.Errorf("v%d.%d.%d: AddForeignKey Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+			t.Errorf("v%d.%d.%d: AddForeignKey matrix Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
 		}
 		if c.Lock != LockNone {
-			t.Errorf("v%d.%d.%d: AddForeignKey Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+			t.Errorf("v%d.%d.%d: AddForeignKey matrix Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
 		}
 		if c.RebuildsTable {
-			t.Errorf("v%d.%d.%d: AddForeignKey RebuildsTable = true, want false", v.Major, v.Minor, v.Patch)
+			t.Errorf("v%d.%d.%d: AddForeignKey matrix RebuildsTable = true, want false", v.Major, v.Minor, v.Patch)
 		}
+	}
+}
+
+// 5.1a ADD FOREIGN KEY with foreign_key_checks=ON (default) — COPY+SHARED.
+// MySQL must validate all existing rows; concurrent writes are blocked.
+func TestSpec_5_1a_AddForeignKey_ChecksOn_IsCopy(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:   parser.DDL,
+			RawSQL: "ALTER TABLE order_items ADD CONSTRAINT fk_test FOREIGN KEY (order_id) REFERENCES orders(id)",
+			Table:  "order_items",
+			DDLOp:  parser.AddForeignKey,
+		},
+		Meta:                     &mysql.TableMetadata{Database: "demo", Table: "order_items"},
+		Version:                  v8_0_35,
+		Topo:                     standaloneInfo(),
+		ForeignKeyChecksDisabled: false, // checks ON — the default zero value
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("ADD FK checks=ON: Algorithm = %q, want COPY", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockShared {
+		t.Errorf("ADD FK checks=ON: Lock = %q, want SHARED", result.Classification.Lock)
+	}
+	if result.Classification.RebuildsTable {
+		t.Error("ADD FK checks=ON: RebuildsTable = true, want false")
+	}
+	if len(result.Warnings) == 0 {
+		t.Error("ADD FK checks=ON: expected a warning about foreign_key_checks, got none")
+	}
+}
+
+// 5.1b ADD FOREIGN KEY with foreign_key_checks=OFF — INPLACE+NONE (matrix baseline).
+func TestSpec_5_1b_AddForeignKey_ChecksOff_IsInplace(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:   parser.DDL,
+			RawSQL: "ALTER TABLE order_items ADD CONSTRAINT fk_test FOREIGN KEY (order_id) REFERENCES orders(id)",
+			Table:  "order_items",
+			DDLOp:  parser.AddForeignKey,
+		},
+		Meta:                     &mysql.TableMetadata{Database: "demo", Table: "order_items"},
+		Version:                  v8_0_35,
+		Topo:                     standaloneInfo(),
+		ForeignKeyChecksDisabled: true, // checks explicitly OFF
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("ADD FK checks=OFF: Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockNone {
+		t.Errorf("ADD FK checks=OFF: Lock = %q, want NONE", result.Classification.Lock)
 	}
 }
 

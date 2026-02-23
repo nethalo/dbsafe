@@ -121,6 +121,14 @@ var planCmd = &cobra.Command{
 			return fmt.Errorf("version detection failed: %w", err)
 		}
 
+		// Query foreign_key_checks: determines whether ADD FOREIGN KEY requires COPY or INPLACE.
+		// Default to false (checks enabled = COPY required) if the variable can't be read.
+		fkChecksDisabled := false
+		if fkChecksVal, err := mysql.GetVariable(conn, "foreign_key_checks"); err == nil {
+			lower := strings.ToLower(fkChecksVal)
+			fkChecksDisabled = lower == "off" || lower == "0"
+		}
+
 		// For DML with WHERE clause, run EXPLAIN to estimate affected rows
 		var estimatedRows int64
 		if parsed.Type == parser.DML && parsed.HasWhere {
@@ -134,12 +142,13 @@ var planCmd = &cobra.Command{
 		// Run analysis
 		chunkSize, _ := cmd.Flags().GetInt("chunk-size")
 		result := analyzer.Analyze(analyzer.Input{
-			Parsed:        parsed,
-			Meta:          meta,
-			Topo:          topo,
-			Version:       version,
-			ChunkSize:     chunkSize,
-			EstimatedRows: estimatedRows,
+			Parsed:                   parsed,
+			Meta:                     meta,
+			Topo:                     topo,
+			Version:                  version,
+			ChunkSize:                chunkSize,
+			EstimatedRows:            estimatedRows,
+			ForeignKeyChecksDisabled: fkChecksDisabled,
 			Connection: &analyzer.ConnectionInfo{
 				Host:   connCfg.Host,
 				Port:   connCfg.Port,

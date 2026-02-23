@@ -70,6 +70,11 @@ type Input struct {
 	ChunkSize     int
 	Connection    *ConnectionInfo // Optional: for generating executable commands
 	EstimatedRows int64           // EXPLAIN-based row estimate for DML
+
+	// ForeignKeyChecksDisabled reflects the server's foreign_key_checks variable at analysis
+	// time. Zero value (false) means checks are ON — the safe default that requires COPY for
+	// ADD FOREIGN KEY. Set to true only when the server reports foreign_key_checks=OFF.
+	ForeignKeyChecksDisabled bool
 }
 
 // Result holds the complete analysis output.
@@ -266,6 +271,22 @@ func analyzeDDL(input Input, result *Result) {
 	if input.Parsed.DDLOp == parser.TableEncryption {
 		result.Warnings = append(result.Warnings,
 			"Requires keyring plugin (keyring_file, keyring_vault, or component_keyring_*). Operation will fail if keyring is not configured.",
+		)
+	}
+
+	// For ADD FOREIGN KEY: the matrix baseline (INPLACE+NONE) applies only when
+	// foreign_key_checks=OFF. With the default foreign_key_checks=ON, MySQL must validate all
+	// existing rows against the new constraint, which requires COPY+SHARED (no concurrent writes).
+	// Zero value of ForeignKeyChecksDisabled is false, so the safe COPY path is the default.
+	if input.Parsed.DDLOp == parser.AddForeignKey && !input.ForeignKeyChecksDisabled {
+		result.Classification = DDLClassification{
+			Algorithm:     AlgoCopy,
+			Lock:          LockShared,
+			RebuildsTable: false,
+			Notes:         "ADD FOREIGN KEY with foreign_key_checks=ON requires COPY algorithm. MySQL must validate all existing rows against the constraint. Set foreign_key_checks=OFF before the ALTER to use INPLACE.",
+		}
+		result.Warnings = append(result.Warnings,
+			"foreign_key_checks=ON: COPY algorithm required for ADD FOREIGN KEY. All existing rows will be validated against the new constraint, blocking concurrent writes.",
 		)
 	}
 
