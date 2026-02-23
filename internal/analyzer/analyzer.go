@@ -215,6 +215,17 @@ func analyzeDDL(input Input, result *Result) {
 		}
 	}
 
+	// For MODIFY COLUMN: check if the change qualifies for INPLACE.
+	// MySQL allows INPLACE for VARCHAR extension when the length prefix size doesn't change
+	// (both old and new fit within the same 1-byte or 2-byte prefix tier).
+	if input.Parsed.DDLOp == parser.ModifyColumn && input.Parsed.NewColumnType != "" {
+		if oldType := findColumnType(input.Meta.Columns, input.Parsed.ColumnName); oldType != "" {
+			if cls, ok := classifyModifyColumnVarchar(oldType, input.Parsed.NewColumnType, findColumnCharset(input.Meta.Columns, input.Parsed.ColumnName)); ok {
+				result.Classification = cls
+			}
+		}
+	}
+
 	// Determine risk and method based on algorithm
 	// Note: Column validation may have already set Risk to RiskDangerous, which we preserve
 	switch result.Classification.Algorithm {
@@ -476,6 +487,111 @@ func findColumnType(columns []mysql.ColumnInfo, name string) string {
 		}
 	}
 	return ""
+}
+
+// findColumnCharset returns the effective character set for a column, or empty if not found/not a string type.
+func findColumnCharset(columns []mysql.ColumnInfo, name string) string {
+	for _, col := range columns {
+		if strings.EqualFold(col.Name, name) {
+			if col.CharacterSet != nil {
+				return *col.CharacterSet
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+// maxBytesPerChar returns the maximum bytes per character for a MySQL charset.
+// Returns 4 (utf8mb4) as a safe default for unknown charsets.
+func maxBytesPerChar(charset string) int {
+	switch strings.ToLower(charset) {
+	case "ascii", "latin1", "latin2", "latin5", "latin7", "armscii8",
+		"cp850", "cp852", "cp866", "cp1250", "cp1251", "cp1256", "cp1257",
+		"dec8", "greek", "hebrew", "hp8", "keybcs2", "koi8r", "koi8u",
+		"macce", "macroman", "swe7", "tis620", "binary":
+		return 1
+	case "gbk", "gb2312", "big5", "sjis", "cp932", "euckr", "ucs2", "utf16le":
+		return 2
+	case "ujis", "eucjpms", "utf8", "utf8mb3":
+		return 3
+	case "utf8mb4", "utf32", "utf16", "gb18030":
+		return 4
+	default:
+		return 4 // conservative default
+	}
+}
+
+// varcharLengthPrefixBytes returns the number of bytes used for the VARCHAR length prefix
+// (1 if maxBytes ≤ 255, else 2).
+func varcharLengthPrefixBytes(n int, charset string) int {
+	if n*maxBytesPerChar(charset) <= 255 {
+		return 1
+	}
+	return 2
+}
+
+// extractVarcharLength parses the length N from a type string like "varchar(50)".
+// Returns (n, true) on success, (0, false) otherwise.
+func extractVarcharLength(typeStr string) (int, bool) {
+	s := strings.TrimSpace(strings.ToLower(typeStr))
+	if !strings.HasPrefix(s, "varchar(") || !strings.HasSuffix(s, ")") {
+		return 0, false
+	}
+	inner := s[len("varchar(") : len(s)-1]
+	var n int
+	if _, err := fmt.Sscanf(inner, "%d", &n); err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// classifyModifyColumnVarchar checks if a MODIFY COLUMN VARCHAR change qualifies for INPLACE.
+// Returns the classification and true if INPLACE is possible, (zero, false) otherwise.
+func classifyModifyColumnVarchar(oldType, newType, charset string) (DDLClassification, bool) {
+	// Strip the base type portion (everything before the first space, to ignore charset clauses in newType)
+	// but also check if the new type is changing the charset.
+	newBase := strings.SplitN(strings.TrimSpace(newType), " ", 2)[0]
+
+	oldN, oldOK := extractVarcharLength(oldType)
+	newN, newOK := extractVarcharLength(newBase)
+	if !oldOK || !newOK {
+		return DDLClassification{}, false
+	}
+
+	// Only expansions are INPLACE; shrinking always requires COPY.
+	if newN < oldN {
+		return DDLClassification{}, false
+	}
+
+	// If the new type includes extra clauses (e.g. "character set utf8mb4"), bail out — charset
+	// changes require COPY and we can't determine the new charset accurately here.
+	if len(strings.SplitN(strings.TrimSpace(newType), " ", 2)) > 1 {
+		return DDLClassification{}, false
+	}
+
+	// Use utf8mb4 (most restrictive) if charset is unknown.
+	if charset == "" {
+		charset = "utf8mb4"
+	}
+
+	oldPrefix := varcharLengthPrefixBytes(oldN, charset)
+	newPrefix := varcharLengthPrefixBytes(newN, charset)
+
+	if oldPrefix != newPrefix {
+		// Length prefix tier changed — MySQL must rewrite all rows (COPY).
+		return DDLClassification{}, false
+	}
+
+	return DDLClassification{
+		Algorithm:     AlgoInplace,
+		Lock:          LockNone,
+		RebuildsTable: false,
+		Notes: fmt.Sprintf(
+			"VARCHAR extension from %d to %d chars stays within the %d-byte length prefix tier (%s charset, max %d bytes/char). INPLACE, no row rewrite, no lock.",
+			oldN, newN, oldPrefix, charset, maxBytesPerChar(charset),
+		),
+	}, true
 }
 
 func validateColumnOperation(input Input, result *Result) {

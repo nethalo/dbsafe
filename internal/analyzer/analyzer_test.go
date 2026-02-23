@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nethalo/dbsafe/internal/mysql"
@@ -1333,6 +1334,165 @@ func TestChangeColumn_SameName_TypeChange_RequiresCopy(t *testing.T) {
 	}
 	if !containsWarning(result.Warnings, "type change detected") {
 		t.Errorf("Expected type-change warning, got: %v", result.Warnings)
+	}
+}
+
+// =============================================================
+// MODIFY COLUMN VARCHAR INPLACE detection (issue #19)
+// =============================================================
+
+func modifyColumnInput(colOldType, newColType, charset string, sizeBytes int64) Input {
+	cs := charset
+	return Input{
+		Parsed: &parser.ParsedSQL{
+			Type:          parser.DDL,
+			RawSQL:        "ALTER TABLE orders MODIFY COLUMN order_number " + newColType,
+			Table:         "orders",
+			DDLOp:         parser.ModifyColumn,
+			ColumnName:    "order_number",
+			NewColumnType: strings.ToLower(newColType),
+		},
+		Meta: &mysql.TableMetadata{
+			Database:    "demo",
+			Table:       "orders",
+			DataLength:  sizeBytes,
+			IndexLength: 0,
+			RowCount:    100000,
+			Columns: []mysql.ColumnInfo{
+				{Name: "id", Type: "int unsigned", Position: 1},
+				{Name: "order_number", Type: colOldType, Position: 2, CharacterSet: &cs},
+			},
+		},
+		Version: mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35},
+		Topo:    &topology.Info{Type: topology.Standalone},
+	}
+}
+
+func TestModifyColumn_VarcharExpansion_SameTier_utf8mb3_IsInplace(t *testing.T) {
+	// Issue #19: VARCHAR(20)→VARCHAR(50) in utf8mb3: 60→150 bytes, both 1-byte prefix → INPLACE
+	input := modifyColumnInput("varchar(20)", "VARCHAR(50)", "utf8mb3", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("expected INPLACE, got %s. Notes: %s", result.Classification.Algorithm, result.Classification.Notes)
+	}
+	if result.Classification.RebuildsTable {
+		t.Error("expected RebuildsTable=false for INPLACE VARCHAR extension")
+	}
+	if result.Classification.Lock != LockNone {
+		t.Errorf("expected LockNone, got %s", result.Classification.Lock)
+	}
+}
+
+func TestModifyColumn_VarcharExpansion_CrossesTier_utf8mb3_IsCopy(t *testing.T) {
+	// VARCHAR(80)→VARCHAR(90) in utf8mb3: 240→270 bytes, crosses 1→2 byte prefix tier → COPY
+	input := modifyColumnInput("varchar(80)", "VARCHAR(90)", "utf8mb3", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("expected COPY for prefix-tier crossing, got %s", result.Classification.Algorithm)
+	}
+}
+
+func TestModifyColumn_VarcharExpansion_SameTier_utf8mb4_IsInplace(t *testing.T) {
+	// VARCHAR(30)→VARCHAR(60) in utf8mb4: 120→240 bytes, both 1-byte prefix (≤255) → INPLACE
+	input := modifyColumnInput("varchar(30)", "VARCHAR(60)", "utf8mb4", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("expected INPLACE for utf8mb4 same-tier expansion, got %s", result.Classification.Algorithm)
+	}
+}
+
+func TestModifyColumn_VarcharExpansion_CrossesTier_utf8mb4_IsCopy(t *testing.T) {
+	// VARCHAR(63)→VARCHAR(64) in utf8mb4: 252→256 bytes, crosses 1→2 byte prefix tier → COPY
+	input := modifyColumnInput("varchar(63)", "VARCHAR(64)", "utf8mb4", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("expected COPY for utf8mb4 prefix-tier crossing, got %s", result.Classification.Algorithm)
+	}
+}
+
+func TestModifyColumn_VarcharExpansion_SameTier_latin1_IsInplace(t *testing.T) {
+	// VARCHAR(100)→VARCHAR(200) in latin1: both ≤255 bytes → INPLACE
+	input := modifyColumnInput("varchar(100)", "VARCHAR(200)", "latin1", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("expected INPLACE for latin1 same-tier expansion, got %s", result.Classification.Algorithm)
+	}
+}
+
+func TestModifyColumn_VarcharExpansion_CrossesTier_latin1_IsCopy(t *testing.T) {
+	// VARCHAR(200)→VARCHAR(300) in latin1: 200→300 bytes, crosses 1→2 byte prefix tier → COPY
+	input := modifyColumnInput("varchar(200)", "VARCHAR(300)", "latin1", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("expected COPY for latin1 prefix-tier crossing, got %s", result.Classification.Algorithm)
+	}
+}
+
+func TestModifyColumn_VarcharShrink_IsCopy(t *testing.T) {
+	// Shrinking VARCHAR is not INPLACE — MySQL requires COPY
+	input := modifyColumnInput("varchar(100)", "VARCHAR(50)", "utf8mb3", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("expected COPY for VARCHAR shrink, got %s", result.Classification.Algorithm)
+	}
+}
+
+func TestModifyColumn_NonVarchar_IsCopy(t *testing.T) {
+	// Non-VARCHAR type changes always use the matrix default (COPY)
+	input := modifyColumnInput("int", "BIGINT", "utf8mb3", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("expected COPY for non-varchar type change, got %s", result.Classification.Algorithm)
+	}
+}
+
+func TestModifyColumn_VarcharExpansion_BothInHighTier_IsInplace(t *testing.T) {
+	// Both in 2-byte prefix tier (>255 bytes): VARCHAR(100)→VARCHAR(200) in utf8mb4
+	// 100*4=400 bytes, 200*4=800 bytes — both >255 bytes → same 2-byte prefix tier → INPLACE
+	input := modifyColumnInput("varchar(100)", "VARCHAR(200)", "utf8mb4", 50*1024*1024)
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("expected INPLACE for both-in-2-byte-prefix expansion, got %s", result.Classification.Algorithm)
+	}
+}
+
+// Unit tests for helper functions
+func TestExtractVarcharLength(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantN   int
+		wantOK  bool
+	}{
+		{"varchar(50)", 50, true},
+		{"varchar(255)", 255, true},
+		{"VARCHAR(50)", 50, true}, // function lowercases its input internally
+		{"int", 0, false},
+		{"char(10)", 0, false},
+		{"varchar()", 0, false},
+	}
+	for _, tt := range tests {
+		n, ok := extractVarcharLength(tt.input)
+		if ok != tt.wantOK || n != tt.wantN {
+			t.Errorf("extractVarcharLength(%q) = (%d, %v), want (%d, %v)", tt.input, n, ok, tt.wantN, tt.wantOK)
+		}
+	}
+}
+
+func TestMaxBytesPerChar(t *testing.T) {
+	tests := []struct{ charset string; want int }{
+		{"latin1", 1},
+		{"ascii", 1},
+		{"utf8mb3", 3},
+		{"utf8", 3},
+		{"utf8mb4", 4},
+		{"utf32", 4},
+		{"gbk", 2},
+		{"unknown_charset", 4}, // conservative default
+	}
+	for _, tt := range tests {
+		if got := maxBytesPerChar(tt.charset); got != tt.want {
+			t.Errorf("maxBytesPerChar(%q) = %d, want %d", tt.charset, got, tt.want)
+		}
 	}
 }
 

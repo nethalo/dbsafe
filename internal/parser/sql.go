@@ -68,7 +68,7 @@ type ParsedSQL struct {
 	ColumnName    string         // for ADD/DROP/MODIFY COLUMN
 	OldColumnName string         // for CHANGE COLUMN
 	NewColumnName string         // for CHANGE COLUMN
-	NewColumnType string         // for CHANGE COLUMN: the new column type (e.g. "decimal(14,4)")
+	NewColumnType string         // for CHANGE/MODIFY COLUMN: the new column type (e.g. "decimal(14,4)")
 	ColumnDef     string         // full column definition for ADD COLUMN
 	IsFirstAfter  bool           // ADD COLUMN ... FIRST or AFTER
 	IndexName     string         // for ADD/DROP INDEX
@@ -249,6 +249,11 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 	case *sqlparser.ModifyColumn:
 		result.ColumnName = opt.NewColDefinition.Name.String()
 		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
+		if opt.NewColDefinition.Type != nil {
+			typeBuf := sqlparser.NewTrackedBuffer(nil)
+			opt.NewColDefinition.Type.Format(typeBuf)
+			result.NewColumnType = strings.ToLower(typeBuf.String())
+		}
 
 	case *sqlparser.ChangeColumn:
 		result.OldColumnName = opt.OldColumn.Name.String()

@@ -683,6 +683,27 @@ func TestParse_AlterTableModifyColumn_ColumnName(t *testing.T) {
 	}
 }
 
+// TestParse_ModifyColumn_ExtractsNewColumnType verifies that MODIFY COLUMN now populates
+// NewColumnType, enabling the analyzer to detect the new type for INPLACE eligibility.
+func TestParse_ModifyColumn_ExtractsNewColumnType(t *testing.T) {
+	result, err := Parse("ALTER TABLE orders MODIFY COLUMN order_number VARCHAR(50)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ModifyColumn {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ModifyColumn)
+	}
+	if result.ColumnName != "order_number" {
+		t.Errorf("ColumnName = %q, want %q", result.ColumnName, "order_number")
+	}
+	if result.NewColumnType == "" {
+		t.Error("NewColumnType is empty; MODIFY COLUMN should populate it")
+	}
+	if result.NewColumnType != "varchar(50)" {
+		t.Errorf("NewColumnType = %q, want %q", result.NewColumnType, "varchar(50)")
+	}
+}
+
 // TestParse_WhereClauseContent verifies the WhereClause string contains the actual
 // condition, not just that it's non-empty.
 func TestParse_WhereClauseContent(t *testing.T) {
