@@ -876,6 +876,39 @@ func TestParse_MultipleOps_AutoIncrementPropagated(t *testing.T) {
 	}
 }
 
+// TestParse_AddStoredGeneratedColumn verifies that ADD COLUMN ... AS (...) STORED
+// sets IsGeneratedStored=true.
+func TestParse_AddStoredGeneratedColumn(t *testing.T) {
+	result, err := Parse("ALTER TABLE gen_col_test ADD COLUMN discount_price DECIMAL(10,2) AS (price * 0.9) STORED")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddColumn {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddColumn)
+	}
+	if !result.IsGeneratedStored {
+		t.Errorf("IsGeneratedStored = false, want true for STORED generated column")
+	}
+	if result.ColumnName != "discount_price" {
+		t.Errorf("ColumnName = %q, want %q", result.ColumnName, "discount_price")
+	}
+}
+
+// TestParse_AddVirtualGeneratedColumn verifies that ADD COLUMN ... AS (...) VIRTUAL
+// does NOT set IsGeneratedStored.
+func TestParse_AddVirtualGeneratedColumn(t *testing.T) {
+	result, err := Parse("ALTER TABLE gen_col_test ADD COLUMN discount_virtual DECIMAL(10,2) AS (price * 0.9) VIRTUAL")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddColumn {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddColumn)
+	}
+	if result.IsGeneratedStored {
+		t.Errorf("IsGeneratedStored = true, want false for VIRTUAL generated column")
+	}
+}
+
 // TestParse_ChangeIndexType verifies that DROP INDEX + ADD INDEX on the same name
 // is detected as ChangeIndexType.
 func TestParse_ChangeIndexType(t *testing.T) {

@@ -308,6 +308,38 @@ func analyzeDDL(input Input, result *Result) {
 		)
 	}
 
+	// For ADD STORED generated column: always requires COPY with SHARED lock.
+	// MySQL must rewrite all rows to compute and store the generated values.
+	// ADD VIRTUAL generated column is already INSTANT from the matrix.
+	if input.Parsed.DDLOp == parser.AddColumn && input.Parsed.IsGeneratedStored {
+		result.Classification = DDLClassification{
+			Algorithm:     AlgoCopy,
+			Lock:          LockShared,
+			RebuildsTable: true,
+			Notes:         "ADD STORED generated column requires COPY algorithm. MySQL must rewrite all rows to compute and store the generated values. Concurrent writes blocked.",
+		}
+		result.Warnings = append(result.Warnings,
+			"STORED generated column: COPY with LOCK=SHARED required. All rows must be rewritten to compute stored values. Concurrent writes are blocked.",
+		)
+	}
+
+	// For DROP STORED generated column: always INPLACE with table rebuild.
+	// MySQL must rewrite all rows to remove the stored values, but allows concurrent DML.
+	// DROP VIRTUAL generated column uses the matrix baseline (INSTANT on 8.0.29+).
+	if input.Parsed.DDLOp == parser.DropColumn {
+		for _, col := range input.Meta.Columns {
+			if strings.EqualFold(col.Name, input.Parsed.ColumnName) && col.IsStoredGenerated {
+				result.Classification = DDLClassification{
+					Algorithm:     AlgoInplace,
+					Lock:          LockNone,
+					RebuildsTable: true,
+					Notes:         "DROP STORED generated column: INPLACE with table rebuild. MySQL rewrites all rows to remove the stored values. Concurrent DML allowed.",
+				}
+				break
+			}
+		}
+	}
+
 	// For MULTIPLE_OPS: classify each sub-operation individually and return the most
 	// restrictive combined result. This handles common compound patterns such as
 	// ADD COLUMN AUTO_INCREMENT + ADD UNIQUE KEY without falling back to the COPY default.

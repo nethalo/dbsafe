@@ -635,6 +635,135 @@ func TestSpec_3_1b_AddColumnAutoIncrementWithUniqueKey(t *testing.T) {
 }
 
 // =============================================================
+// Section 4: Generated Column Operations — §4.1, §4.2, §4.3, §4.4
+// =============================================================
+
+// 4.1 ADD STORED generated column — COPY+SHARED+rebuild (MySQL must rewrite all rows).
+func TestSpec_4_1_AddStoredGeneratedColumn_IsCopy(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:              parser.DDL,
+			RawSQL:            "ALTER TABLE gen_col_test ADD COLUMN discount_price DECIMAL(10,2) AS (price * 0.9) STORED",
+			Table:             "gen_col_test",
+			DDLOp:             parser.AddColumn,
+			ColumnName:        "discount_price",
+			IsGeneratedStored: true,
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "demo",
+			Table:    "gen_col_test",
+			Columns:  []mysql.ColumnInfo{{Name: "price", Type: "decimal(10,2)", Nullable: false, Position: 2}},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("ADD STORED generated column: Algorithm = %q, want COPY", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockShared {
+		t.Errorf("ADD STORED generated column: Lock = %q, want SHARED", result.Classification.Lock)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Error("ADD STORED generated column: RebuildsTable = false, want true")
+	}
+}
+
+// 4.2 ADD VIRTUAL generated column — INSTANT (metadata-only, computed on read).
+func TestSpec_4_2_AddVirtualGeneratedColumn_IsInstant(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:              parser.DDL,
+			RawSQL:            "ALTER TABLE gen_col_test ADD COLUMN discount_virtual DECIMAL(10,2) AS (price * 0.9) VIRTUAL",
+			Table:             "gen_col_test",
+			DDLOp:             parser.AddColumn,
+			ColumnName:        "discount_virtual",
+			IsGeneratedStored: false, // VIRTUAL — no stored values to write
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "demo",
+			Table:    "gen_col_test",
+			Columns:  []mysql.ColumnInfo{{Name: "price", Type: "decimal(10,2)", Nullable: false, Position: 2}},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInstant {
+		t.Errorf("ADD VIRTUAL generated column: Algorithm = %q, want INSTANT", result.Classification.Algorithm)
+	}
+	if result.Classification.RebuildsTable {
+		t.Error("ADD VIRTUAL generated column: RebuildsTable = true, want false")
+	}
+}
+
+// 4.3 DROP STORED generated column — INPLACE+rebuild (rows must be rewritten).
+func TestSpec_4_3_DropStoredGeneratedColumn_IsInplace(t *testing.T) {
+	isStored := true
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:       parser.DDL,
+			RawSQL:     "ALTER TABLE gen_col_test DROP COLUMN total_stored",
+			Table:      "gen_col_test",
+			DDLOp:      parser.DropColumn,
+			ColumnName: "total_stored",
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "demo",
+			Table:    "gen_col_test",
+			Columns: []mysql.ColumnInfo{
+				{Name: "total_stored", Type: "decimal(12,2)", Nullable: false, Position: 4, IsStoredGenerated: isStored},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("DROP STORED generated column: Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockNone {
+		t.Errorf("DROP STORED generated column: Lock = %q, want NONE", result.Classification.Lock)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Error("DROP STORED generated column: RebuildsTable = false, want true")
+	}
+}
+
+// 4.4 DROP VIRTUAL generated column — INSTANT (metadata-only).
+func TestSpec_4_4_DropVirtualGeneratedColumn_IsInstant(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:       parser.DDL,
+			RawSQL:     "ALTER TABLE gen_col_test DROP COLUMN total_virtual",
+			Table:      "gen_col_test",
+			DDLOp:      parser.DropColumn,
+			ColumnName: "total_virtual",
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "demo",
+			Table:    "gen_col_test",
+			Columns: []mysql.ColumnInfo{
+				{Name: "total_virtual", Type: "decimal(12,2)", Nullable: false, Position: 5, IsStoredGenerated: false},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInstant {
+		t.Errorf("DROP VIRTUAL generated column: Algorithm = %q, want INSTANT", result.Classification.Algorithm)
+	}
+	if result.Classification.RebuildsTable {
+		t.Error("DROP VIRTUAL generated column: RebuildsTable = true, want false")
+	}
+}
+
+// =============================================================
 // Section 6 (new): Table Option Operations — §6.2, §6.3
 // =============================================================
 

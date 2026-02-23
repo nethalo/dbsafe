@@ -123,10 +123,10 @@ func TestGetTableMetadata(t *testing.T) {
 		// Mock COLUMNS query
 		colRows := sqlmock.NewRows([]string{
 			"COLUMN_NAME", "COLUMN_TYPE", "IS_NULLABLE", "COLUMN_DEFAULT",
-			"ORDINAL_POSITION", "CHARACTER_SET_NAME", "COLLATION_NAME",
+			"ORDINAL_POSITION", "CHARACTER_SET_NAME", "COLLATION_NAME", "EXTRA",
 		}).
-			AddRow("id", "int", "NO", nil, 1, nil, nil).
-			AddRow("name", "varchar(100)", "YES", "''", 2, "utf8mb4", "utf8mb4_unicode_ci")
+			AddRow("id", "int", "NO", nil, 1, nil, nil, "auto_increment").
+			AddRow("name", "varchar(100)", "YES", "''", 2, "utf8mb4", "utf8mb4_unicode_ci", "")
 
 		mock.ExpectQuery("SELECT.*FROM information_schema.COLUMNS").
 			WithArgs("testdb", "users").
@@ -238,11 +238,11 @@ func TestGetColumns(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{
 		"COLUMN_NAME", "COLUMN_TYPE", "IS_NULLABLE", "COLUMN_DEFAULT",
-		"ORDINAL_POSITION", "CHARACTER_SET_NAME", "COLLATION_NAME",
+		"ORDINAL_POSITION", "CHARACTER_SET_NAME", "COLLATION_NAME", "EXTRA",
 	}).
-		AddRow("id", "int", "NO", nil, 1, nil, nil).
-		AddRow("name", "varchar(100)", "YES", "John", 2, "utf8mb4", "utf8mb4_unicode_ci").
-		AddRow("created_at", "timestamp", "NO", "CURRENT_TIMESTAMP", 3, nil, nil)
+		AddRow("id", "int", "NO", nil, 1, nil, nil, "").
+		AddRow("name", "varchar(100)", "YES", "John", 2, "utf8mb4", "utf8mb4_unicode_ci", "").
+		AddRow("created_at", "timestamp", "NO", "CURRENT_TIMESTAMP", 3, nil, nil, "")
 
 	mock.ExpectQuery("SELECT.*FROM information_schema.COLUMNS").
 		WithArgs("testdb", "users").

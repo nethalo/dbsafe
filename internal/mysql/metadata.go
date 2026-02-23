@@ -61,13 +61,14 @@ type TriggerInfo struct {
 
 // ColumnInfo describes a single column in a table.
 type ColumnInfo struct {
-	Name         string
-	Type         string
-	Nullable     bool
-	Default      *string
-	Position     int
-	CharacterSet *string
-	Collation    *string
+	Name             string
+	Type             string
+	Nullable         bool
+	Default          *string
+	Position         int
+	CharacterSet     *string
+	Collation        *string
+	IsStoredGenerated bool // true when EXTRA contains "STORED GENERATED"
 }
 
 // escapeIdentifier safely escapes a MySQL identifier (database, table, column name)
@@ -276,7 +277,8 @@ func getColumns(db *sql.DB, database, table string) ([]ColumnInfo, error) {
 			COLUMN_DEFAULT,
 			ORDINAL_POSITION,
 			CHARACTER_SET_NAME,
-			COLLATION_NAME
+			COLLATION_NAME,
+			EXTRA
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 		ORDER BY ORDINAL_POSITION
@@ -290,9 +292,9 @@ func getColumns(db *sql.DB, database, table string) ([]ColumnInfo, error) {
 	for rows.Next() {
 		var c ColumnInfo
 		var nullable string
-		var defaultVal, charSet, collation sql.NullString
+		var defaultVal, charSet, collation, extra sql.NullString
 
-		if err := rows.Scan(&c.Name, &c.Type, &nullable, &defaultVal, &c.Position, &charSet, &collation); err != nil {
+		if err := rows.Scan(&c.Name, &c.Type, &nullable, &defaultVal, &c.Position, &charSet, &collation, &extra); err != nil {
 			return nil, err
 		}
 
@@ -305,6 +307,9 @@ func getColumns(db *sql.DB, database, table string) ([]ColumnInfo, error) {
 		}
 		if collation.Valid {
 			c.Collation = &collation.String
+		}
+		if extra.Valid && strings.Contains(strings.ToUpper(extra.String), "STORED GENERATED") {
+			c.IsStoredGenerated = true
 		}
 
 		result = append(result, c)

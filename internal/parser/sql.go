@@ -107,6 +107,7 @@ type ParsedSQL struct {
 	HasNotNull        bool           // ADD COLUMN ... NOT NULL
 	HasDefault        bool           // ADD COLUMN ... DEFAULT
 	HasAutoIncrement  bool           // ADD COLUMN ... AUTO_INCREMENT
+	IsGeneratedStored bool           // ADD COLUMN ... AS (...) STORED
 	DDLOperations     []DDLOperation // for multi-op ALTER TABLE
 	TablespaceName    string         // for ALTER TABLESPACE
 	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
@@ -344,6 +345,13 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 			// Check for AUTO_INCREMENT
 			if col.Type.Options != nil && col.Type.Options.Autoincrement {
 				result.HasAutoIncrement = true
+			}
+
+			// Check for STORED generated column (AS (...) STORED).
+			// VIRTUAL generated columns and regular columns leave this false.
+			if col.Type.Options != nil && col.Type.Options.As != nil &&
+				col.Type.Options.Storage == sqlparser.StoredStorage {
+				result.IsGeneratedStored = true
 			}
 		}
 
