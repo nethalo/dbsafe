@@ -8,6 +8,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-02-22
+
+### Fixed
+- `CONVERT TO CHARACTER SET` and `CHARACTER SET =` (table default) were incorrectly treated as the same operation and both classified as `COPY + SHARED lock`
+  - `CHARACTER SET =` is now correctly classified as `INSTANT` / no lock — it only updates the table's default charset metadata; existing column data is not converted
+  - `CONVERT TO CHARACTER SET` now applies WL#11605 logic using live table metadata: `COPY + SHARED` when any indexed string column exists (names the triggering columns in the output); `INPLACE + SHARED` otherwise, with a warning that writes are still blocked regardless
+- `MODIFY COLUMN` VARCHAR extension is now classified as `INPLACE` (no lock, no rebuild) when the length prefix tier does not change (#19)
+  - Expansion within the 1-byte prefix tier (max bytes/char × new length ≤ 255) or within the 2-byte tier both qualify
+  - Crossing the 1→2 byte prefix boundary, or shrinking, still falls back to `COPY`
+  - Charset-aware: uses the column's actual charset from `INFORMATION_SCHEMA` to compute byte widths (latin1=1, utf8mb3=3, utf8mb4=4, etc.)
+
+### Changed
+- Removed unverified claims about Cloud SQL and Azure MySQL compatibility from documentation
+
 ## [0.3.1] - 2026-02-23
 
 ### Fixed
