@@ -8,6 +8,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-02-23
+
+### Added
+- `OPTIMIZE TABLE` classification: `INPLACE + rebuild` (equivalent to `ALTER TABLE ... FORCE`)
+- `ALTER TABLESPACE ... RENAME TO` classification: `INPLACE`, metadata-only; warns when server version < 8.0.21
+- `MODIFY COLUMN` charset change detection: warns when an explicit `CHARACTER SET` clause changes the column charset; classifies as `COPY + SHARED`
+- `ParsedSQL.NewEngine` field: parser now extracts the target engine name from `ENGINE=` clauses, enabling same-engine detection
+- 4 regression tests for issues #30, #31, #33–#38 added to `ddl_spec_test.go`
+
+### Fixed
+- `ADD PRIMARY KEY` on a table without a primary key was classified as `COPY`; now correctly `INPLACE + rebuild` per MySQL 8.0 Table 17.21 (#30). Exception: if any PK column is nullable in the live schema, `COPY` is preserved (MySQL must implicitly convert it to `NOT NULL`).
+- `ADD COLUMN ... AUTO_INCREMENT` was classified as `COPY`; now correctly `INPLACE + SHARED lock + rebuild` (#31)
+- `ADD STORED generated column` was classified as `INSTANT` (same as virtual); now correctly `COPY + SHARED lock + rebuild` — MySQL must rewrite all rows to compute stored values (#33)
+- `DROP STORED generated column` was classified as `INSTANT`; now correctly `INPLACE + rebuild` (#33)
+- `MODIFY COLUMN ... FIRST/AFTER` on a stored generated column was classified as `INPLACE`; now correctly `COPY` (#34). Virtual generated column reorder remains `INPLACE, no rebuild`.
+- `ADD FOREIGN KEY` was classified as `INPLACE` regardless of `foreign_key_checks`; now correctly `COPY + SHARED` when `foreign_key_checks=ON` (the default) (#35). `INPLACE` is used only when `foreign_key_checks=OFF`.
+- Multiple `STATS_*` options in a single `ALTER TABLE` (e.g. `STATS_PERSISTENT=0, STATS_SAMPLE_PAGES=20`) were classified as `COPY` via `MULTIPLE_OPS` fallback; now correctly `INPLACE` (#36)
+- `ENGINE=InnoDB` on an InnoDB table (same-engine rebuild) was classified as `COPY`; now correctly `INPLACE + rebuild` — equivalent to `ALTER TABLE ... FORCE` (#37)
+- `ALTER TABLE ... RENAME TO` was classified as `OTHER / COPY`; now correctly `INSTANT` — same as standalone `RENAME TABLE` (#38)
+
 ## [0.3.3] - 2026-02-23
 
 ### Added
