@@ -909,6 +909,48 @@ func TestParse_AddVirtualGeneratedColumn(t *testing.T) {
 	}
 }
 
+// TestParse_ModifyStoredGeneratedColumn verifies that MODIFY COLUMN ... AS (...) STORED
+// sets both IsGeneratedColumn=true and IsGeneratedStored=true.
+func TestParse_ModifyStoredGeneratedColumn(t *testing.T) {
+	result, err := Parse("ALTER TABLE t MODIFY COLUMN total_stored DECIMAL(12,2) AS (price * quantity) STORED FIRST")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ModifyColumn {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ModifyColumn)
+	}
+	if !result.IsGeneratedColumn {
+		t.Error("IsGeneratedColumn = false, want true for STORED generated column")
+	}
+	if !result.IsGeneratedStored {
+		t.Error("IsGeneratedStored = false, want true for STORED generated column")
+	}
+	if !result.IsFirstAfter {
+		t.Error("IsFirstAfter = false, want true (FIRST clause present)")
+	}
+}
+
+// TestParse_ModifyVirtualGeneratedColumn verifies that MODIFY COLUMN ... AS (...) VIRTUAL
+// sets IsGeneratedColumn=true but NOT IsGeneratedStored.
+func TestParse_ModifyVirtualGeneratedColumn(t *testing.T) {
+	result, err := Parse("ALTER TABLE t MODIFY COLUMN total_virtual DECIMAL(12,2) AS (price * quantity) VIRTUAL AFTER id")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ModifyColumn {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ModifyColumn)
+	}
+	if !result.IsGeneratedColumn {
+		t.Error("IsGeneratedColumn = false, want true for VIRTUAL generated column")
+	}
+	if result.IsGeneratedStored {
+		t.Error("IsGeneratedStored = true, want false for VIRTUAL generated column")
+	}
+	if !result.IsFirstAfter {
+		t.Error("IsFirstAfter = false, want true (AFTER clause present)")
+	}
+}
+
 // TestParse_ChangeIndexType verifies that DROP INDEX + ADD INDEX on the same name
 // is detected as ChangeIndexType.
 func TestParse_ChangeIndexType(t *testing.T) {

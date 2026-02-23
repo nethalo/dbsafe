@@ -107,8 +107,9 @@ type ParsedSQL struct {
 	HasNotNull        bool           // ADD COLUMN ... NOT NULL
 	HasDefault        bool           // ADD COLUMN ... DEFAULT
 	HasAutoIncrement  bool           // ADD COLUMN ... AUTO_INCREMENT
-	IsGeneratedStored bool           // ADD COLUMN ... AS (...) STORED
-	DDLOperations     []DDLOperation // for multi-op ALTER TABLE
+	IsGeneratedStored  bool           // ADD/MODIFY COLUMN ... AS (...) STORED
+	IsGeneratedColumn  bool           // ADD/MODIFY COLUMN has an AS (...) expression (STORED or VIRTUAL)
+	DDLOperations      []DDLOperation // for multi-op ALTER TABLE
 	TablespaceName    string         // for ALTER TABLESPACE
 	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
 	IndexColumns      []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names
@@ -347,11 +348,12 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 				result.HasAutoIncrement = true
 			}
 
-			// Check for STORED generated column (AS (...) STORED).
-			// VIRTUAL generated columns and regular columns leave this false.
-			if col.Type.Options != nil && col.Type.Options.As != nil &&
-				col.Type.Options.Storage == sqlparser.StoredStorage {
-				result.IsGeneratedStored = true
+			// Check for generated column (STORED or VIRTUAL).
+			if col.Type.Options != nil && col.Type.Options.As != nil {
+				result.IsGeneratedColumn = true
+				if col.Type.Options.Storage == sqlparser.StoredStorage {
+					result.IsGeneratedStored = true
+				}
 			}
 		}
 
@@ -377,6 +379,14 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 		// Detect FIRST/AFTER for column reordering
 		if opt.First || opt.After != nil {
 			result.IsFirstAfter = true
+		}
+		// Detect STORED/VIRTUAL generated column in new definition
+		if opt.NewColDefinition.Type != nil && opt.NewColDefinition.Type.Options != nil &&
+			opt.NewColDefinition.Type.Options.As != nil {
+			result.IsGeneratedColumn = true
+			if opt.NewColDefinition.Type.Options.Storage == sqlparser.StoredStorage {
+				result.IsGeneratedStored = true
+			}
 		}
 
 	case *sqlparser.ChangeColumn:

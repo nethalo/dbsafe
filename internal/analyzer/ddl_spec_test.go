@@ -763,6 +763,82 @@ func TestSpec_4_4_DropVirtualGeneratedColumn_IsInstant(t *testing.T) {
 	}
 }
 
+// 4.5 MODIFY STORED generated column order (FIRST/AFTER) — COPY+SHARED+rebuild.
+// Reordering a STORED column requires a full table rewrite.
+func TestSpec_4_5_ModifyStoredColumnReorder_IsCopy(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:              parser.DDL,
+			RawSQL:            "ALTER TABLE gen_col_test MODIFY COLUMN total_stored DECIMAL(12,2) AS (price * quantity) STORED FIRST",
+			Table:             "gen_col_test",
+			DDLOp:             parser.ModifyColumn,
+			ColumnName:        "total_stored",
+			NewColumnType:     "decimal(12,2) as (price * quantity) stored",
+			IsFirstAfter:      true,
+			IsGeneratedColumn: true,
+			IsGeneratedStored: true,
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "demo",
+			Table:    "gen_col_test",
+			Columns: []mysql.ColumnInfo{
+				{Name: "total_stored", Type: "decimal(12,2)", Nullable: false, Position: 4, IsStoredGenerated: true},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("MODIFY STORED col reorder: Algorithm = %q, want COPY", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockShared {
+		t.Errorf("MODIFY STORED col reorder: Lock = %q, want SHARED", result.Classification.Lock)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Error("MODIFY STORED col reorder: RebuildsTable = false, want true")
+	}
+}
+
+// 4.6 MODIFY VIRTUAL generated column order (FIRST/AFTER) — INPLACE+NONE+rebuild=false.
+// Reordering a VIRTUAL column is metadata-only: there is no stored data to move.
+func TestSpec_4_6_ModifyVirtualColumnReorder_IsInplaceNoRebuild(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:              parser.DDL,
+			RawSQL:            "ALTER TABLE gen_col_test MODIFY COLUMN total_virtual DECIMAL(12,2) AS (price * quantity) VIRTUAL AFTER id",
+			Table:             "gen_col_test",
+			DDLOp:             parser.ModifyColumn,
+			ColumnName:        "total_virtual",
+			NewColumnType:     "decimal(12,2) as (price * quantity) virtual",
+			IsFirstAfter:      true,
+			IsGeneratedColumn: true,
+			IsGeneratedStored: false,
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "demo",
+			Table:    "gen_col_test",
+			Columns: []mysql.ColumnInfo{
+				{Name: "total_virtual", Type: "decimal(12,2)", Nullable: false, Position: 5, IsStoredGenerated: false},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("MODIFY VIRTUAL col reorder: Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockNone {
+		t.Errorf("MODIFY VIRTUAL col reorder: Lock = %q, want NONE", result.Classification.Lock)
+	}
+	if result.Classification.RebuildsTable {
+		t.Error("MODIFY VIRTUAL col reorder: RebuildsTable = true, want false")
+	}
+}
+
 // =============================================================
 // Section 6 (new): Table Option Operations — §6.2, §6.3
 // =============================================================

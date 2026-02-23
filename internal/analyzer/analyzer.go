@@ -347,20 +347,40 @@ func analyzeDDL(input Input, result *Result) {
 		result.Classification = aggregateMultipleOps(input.Parsed.DDLOperations, input.Parsed.HasAutoIncrement, v)
 	}
 
-	// For MODIFY COLUMN with FIRST/AFTER: column reorder forces a table rebuild.
-	// If the same-type detection above already gave INPLACE (e.g. varchar same-tier), we upgrade
-	// rebuild to true. If type is changing (COPY), we leave it alone — type change takes precedence.
+	// For MODIFY COLUMN with FIRST/AFTER: column reorder behavior depends on column type.
+	// Generated columns have different rules than regular columns.
 	if input.Parsed.DDLOp == parser.ModifyColumn && input.Parsed.IsFirstAfter {
 		oldType := findColumnType(input.Meta.Columns, input.Parsed.ColumnName)
 		if oldType != "" {
 			newBase := strings.ToLower(strings.SplitN(strings.TrimSpace(input.Parsed.NewColumnType), " ", 2)[0])
 			if strings.EqualFold(strings.ReplaceAll(oldType, " ", ""), strings.ReplaceAll(newBase, " ", "")) {
-				// Same type, just reordering — INPLACE with rebuild.
-				result.Classification = DDLClassification{
-					Algorithm:     AlgoInplace,
-					Lock:          LockNone,
-					RebuildsTable: true,
-					Notes:         "Column reorder (FIRST/AFTER) with same type: INPLACE with table rebuild, concurrent DML allowed.",
+				switch {
+				case input.Parsed.IsGeneratedStored:
+					// STORED generated column reorder requires COPY: all rows must be rewritten
+					// to move the physical column data.
+					result.Classification = DDLClassification{
+						Algorithm:     AlgoCopy,
+						Lock:          LockShared,
+						RebuildsTable: true,
+						Notes:         "STORED generated column reorder (FIRST/AFTER): COPY required. MySQL must rewrite all rows to relocate the stored values.",
+					}
+				case input.Parsed.IsGeneratedColumn:
+					// VIRTUAL generated column reorder: INPLACE, no rebuild. There is no
+					// stored data to move — only metadata changes.
+					result.Classification = DDLClassification{
+						Algorithm:     AlgoInplace,
+						Lock:          LockNone,
+						RebuildsTable: false,
+						Notes:         "VIRTUAL generated column reorder (FIRST/AFTER): INPLACE, no rebuild. No stored values to move.",
+					}
+				default:
+					// Regular column reorder — INPLACE with table rebuild, concurrent DML allowed.
+					result.Classification = DDLClassification{
+						Algorithm:     AlgoInplace,
+						Lock:          LockNone,
+						RebuildsTable: true,
+						Notes:         "Column reorder (FIRST/AFTER) with same type: INPLACE with table rebuild, concurrent DML allowed.",
+					}
 				}
 			}
 			// If types differ, the existing classification (COPY) already covers the type-change case.
