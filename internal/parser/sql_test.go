@@ -174,13 +174,30 @@ func TestParse_AlterTableAddForeignKey(t *testing.T) {
 	}
 }
 
-func TestParse_AlterTableChangeCharset(t *testing.T) {
+func TestParse_AlterTableConvertCharset(t *testing.T) {
 	result, err := Parse("ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.DDLOp != ChangeCharset {
-		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ChangeCharset)
+	if result.DDLOp != ConvertCharset {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ConvertCharset)
+	}
+}
+
+func TestParse_AlterTableChangeCharset(t *testing.T) {
+	tests := []string{
+		"ALTER TABLE users CHARACTER SET = utf8mb4",
+		"ALTER TABLE users CHARSET = utf8mb4",
+		"ALTER TABLE users DEFAULT CHARACTER SET utf8mb4",
+	}
+	for _, sql := range tests {
+		result, err := Parse(sql)
+		if err != nil {
+			t.Fatalf("unexpected error parsing %q: %v", sql, err)
+		}
+		if result.DDLOp != ChangeCharset {
+			t.Errorf("SQL %q: DDLOp = %q, want %q", sql, result.DDLOp, ChangeCharset)
+		}
 	}
 }
 

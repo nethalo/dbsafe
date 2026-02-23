@@ -33,7 +33,8 @@ const (
 	DropPrimaryKey  DDLOperation = "DROP_PRIMARY_KEY"
 	RenameTable     DDLOperation = "RENAME_TABLE"
 	ChangeEngine    DDLOperation = "CHANGE_ENGINE"
-	ChangeCharset   DDLOperation = "CHANGE_CHARSET"
+	ChangeCharset   DDLOperation = "CHANGE_CHARSET"   // ALTER TABLE ... CHARACTER SET = ... (table default only)
+	ConvertCharset  DDLOperation = "CONVERT_CHARSET"  // ALTER TABLE ... CONVERT TO CHARACTER SET ... (rewrites all columns)
 	ChangeRowFormat DDLOperation = "CHANGE_ROW_FORMAT"
 	AddPartition    DDLOperation = "ADD_PARTITION"
 	DropPartition   DDLOperation = "DROP_PARTITION"
@@ -294,7 +295,7 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 	case *sqlparser.AddConstraintDefinition:
 		return AddForeignKey
 	case *sqlparser.AlterCharset:
-		return ChangeCharset
+		return ConvertCharset
 	case *sqlparser.AlterColumn:
 		if opt.DropDefault {
 			return DropDefault
@@ -305,11 +306,13 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 		return OtherDDL
 	case sqlparser.TableOptions:
 		for _, tableOpt := range opt {
-			switch tableOpt.Name {
+			switch strings.ToUpper(tableOpt.Name) {
 			case "ENGINE":
 				return ChangeEngine
 			case "ROW_FORMAT":
 				return ChangeRowFormat
+			case "CHARSET", "CHARACTER SET":
+				return ChangeCharset
 			}
 		}
 		return OtherDDL

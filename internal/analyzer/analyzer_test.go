@@ -198,9 +198,24 @@ func TestClassifyDDL_DropIndex(t *testing.T) {
 }
 
 func TestClassifyDDL_ChangeCharset(t *testing.T) {
+	// CHARACTER SET = ... is a metadata-only change; no rebuild, no lock.
 	c := ClassifyDDL(parser.ChangeCharset, 8, 0, 35)
+	if c.Algorithm != AlgoInstant {
+		t.Errorf("Algorithm = %q, want INSTANT", c.Algorithm)
+	}
+	if c.RebuildsTable {
+		t.Error("RebuildsTable = true, want false")
+	}
+}
+
+func TestClassifyDDL_ConvertCharset(t *testing.T) {
+	// CONVERT TO CHARACTER SET baseline is COPY+SHARED (refined by analyzer with metadata).
+	c := ClassifyDDL(parser.ConvertCharset, 8, 0, 35)
 	if c.Algorithm != AlgoCopy {
 		t.Errorf("Algorithm = %q, want COPY", c.Algorithm)
+	}
+	if c.Lock != LockShared {
+		t.Errorf("Lock = %q, want SHARED", c.Lock)
 	}
 	if !c.RebuildsTable {
 		t.Error("RebuildsTable = false, want true")

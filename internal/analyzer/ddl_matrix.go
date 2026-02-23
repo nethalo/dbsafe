@@ -197,12 +197,27 @@ var ddlMatrix = map[matrixKey]DDLClassification{
 	{parser.ChangeEngine, V8_4_LTS}:     {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild using COPY algorithm."},
 
 	// ═══════════════════════════════════════════════════
-	// CHANGE CHARACTER SET
+	// CHANGE CHARACTER SET (table default only)
+	// ALTER TABLE ... CHARACTER SET = ... changes only the table's default character set
+	// for future columns. Existing column data is NOT converted. Metadata-only change.
 	// ═══════════════════════════════════════════════════
-	{parser.ChangeCharset, V8_0_Early}:   {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild. Converts all text columns."},
-	{parser.ChangeCharset, V8_0_Instant}: {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild. Converts all text columns."},
-	{parser.ChangeCharset, V8_0_Full}:    {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild. Converts all text columns."},
-	{parser.ChangeCharset, V8_4_LTS}:     {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild. Converts all text columns."},
+	{parser.ChangeCharset, V8_0_Early}:   {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "Metadata-only: updates the table's default character set for new columns. Existing column data is NOT converted."},
+	{parser.ChangeCharset, V8_0_Instant}: {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "Metadata-only: updates the table's default character set for new columns. Existing column data is NOT converted."},
+	{parser.ChangeCharset, V8_0_Full}:    {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "Metadata-only: updates the table's default character set for new columns. Existing column data is NOT converted."},
+	{parser.ChangeCharset, V8_4_LTS}:     {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "Metadata-only: updates the table's default character set for new columns. Existing column data is NOT converted."},
+
+	// ═══════════════════════════════════════════════════
+	// CONVERT CHARACTER SET (CONVERT TO CHARACTER SET)
+	// Rewrites every text column's data. Algorithm depends on whether any indexed
+	// string column exists (WL#11605): COPY if yes, INPLACE if no — but SHARED lock
+	// always applies; concurrent DML is never allowed regardless of algorithm.
+	// The matrix baseline is COPY (conservative); the analyzer refines to INPLACE
+	// when live metadata shows no indexed string columns.
+	// ═══════════════════════════════════════════════════
+	{parser.ConvertCharset, V8_0_Early}:   {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rewrite. COPY if indexed string columns exist (WL#11605); INPLACE otherwise — SHARED lock always applies, no concurrent DML."},
+	{parser.ConvertCharset, V8_0_Instant}: {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rewrite. COPY if indexed string columns exist (WL#11605); INPLACE otherwise — SHARED lock always applies, no concurrent DML."},
+	{parser.ConvertCharset, V8_0_Full}:    {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rewrite. COPY if indexed string columns exist (WL#11605); INPLACE otherwise — SHARED lock always applies, no concurrent DML."},
+	{parser.ConvertCharset, V8_4_LTS}:     {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rewrite. COPY if indexed string columns exist (WL#11605); INPLACE otherwise — SHARED lock always applies, no concurrent DML."},
 
 	// ═══════════════════════════════════════════════════
 	// SET DEFAULT / DROP DEFAULT

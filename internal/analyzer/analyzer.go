@@ -189,6 +189,13 @@ func analyzeDDL(input Input, result *Result) {
 	v := input.Version
 	result.Classification = ClassifyDDLWithContext(input.Parsed, v.Major, v.Minor, v.EffectivePatch())
 
+	// For CONVERT TO CHARACTER SET: refine the COPY baseline from the matrix using live
+	// table metadata. Per WL#11605, COPY is required when any indexed string column exists;
+	// INPLACE is sufficient otherwise — but SHARED lock always applies regardless.
+	if input.Parsed.DDLOp == parser.ConvertCharset {
+		applyConvertCharsetClassification(input, result)
+	}
+
 	// For CHANGE COLUMN: check if the data type is actually changing.
 	// The matrix baseline assumes rename-only (INPLACE). If the type changes, COPY is required.
 	if input.Parsed.DDLOp == parser.ChangeColumn && input.Parsed.NewColumnType != "" {
@@ -404,6 +411,61 @@ func estimateAffectedRows(input Input) int64 {
 	// If no estimate provided and has WHERE, return 0
 	// (caller should provide EXPLAIN estimate for accurate results)
 	return 0
+}
+
+// applyConvertCharsetClassification refines the DDL matrix baseline for CONVERT TO CHARACTER SET.
+// Per WL#11605: if any indexed string column exists the algorithm must be COPY; otherwise INPLACE
+// is permitted. In both cases MySQL always acquires a SHARED lock — concurrent DML is never allowed.
+func applyConvertCharsetClassification(input Input, result *Result) {
+	// Build set of indexed column names (case-insensitive).
+	indexedCols := make(map[string]bool)
+	for _, idx := range input.Meta.Indexes {
+		for _, col := range idx.Columns {
+			indexedCols[strings.ToLower(col)] = true
+		}
+	}
+
+	// Find which indexed columns are string types.
+	var indexedStringCols []string
+	for _, col := range input.Meta.Columns {
+		if indexedCols[strings.ToLower(col.Name)] && isStringType(col.Type) {
+			indexedStringCols = append(indexedStringCols, col.Name)
+		}
+	}
+
+	if len(indexedStringCols) > 0 {
+		result.Classification = DDLClassification{
+			Algorithm:     AlgoCopy,
+			Lock:          LockShared,
+			RebuildsTable: true,
+			Notes: fmt.Sprintf(
+				"COPY algorithm required: indexed string column(s) (%s) cannot have their collation changed INPLACE (WL#11605). Reads allowed, writes blocked during full table rebuild.",
+				strings.Join(indexedStringCols, ", "),
+			),
+		}
+	} else {
+		result.Classification = DDLClassification{
+			Algorithm:     AlgoInplace,
+			Lock:          LockShared,
+			RebuildsTable: true,
+			Notes:         "INPLACE possible (no indexed string columns), but CONVERT TO CHARACTER SET always acquires SHARED lock — writes are blocked for the entire rebuild regardless of algorithm.",
+		}
+		result.Warnings = append(result.Warnings,
+			"No indexed string columns: INPLACE algorithm is used, but CONVERT TO CHARACTER SET always holds a SHARED lock. Writes are blocked during the entire table rebuild.",
+		)
+	}
+}
+
+// isStringType reports whether a MySQL column type is a character string type
+// (varchar, char, text family, enum, set) that participates in character set encoding.
+func isStringType(colType string) bool {
+	lower := strings.ToLower(colType)
+	for _, prefix := range []string{"varchar", "char", "tinytext", "mediumtext", "longtext", "text", "enum", "set"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // findColumnType returns the type string for a column by name, or empty if not found.
