@@ -776,14 +776,29 @@ func TestParse_RenameTableQualified(t *testing.T) {
 }
 
 // TestParse_OtherDDLTableOption exercises the TableOptions branch of
-// classifySingleAlterOp for a table option that is neither ENGINE nor ROW_FORMAT.
+// classifySingleAlterOp for a table option that maps to OtherDDL (unrecognized option).
 func TestParse_OtherDDLTableOption(t *testing.T) {
-	result, err := Parse("ALTER TABLE t AUTO_INCREMENT = 1000")
+	// KEY_BLOCK_SIZE is a valid table option that currently falls through to OtherDDL.
+	result, err := Parse("ALTER TABLE t KEY_BLOCK_SIZE = 8")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.DDLOp != OtherDDL {
 		t.Errorf("DDLOp = %q, want %q", result.DDLOp, OtherDDL)
+	}
+}
+
+// TestParse_ChangeAutoIncrement verifies that AUTO_INCREMENT = N is recognized.
+func TestParse_ChangeAutoIncrement(t *testing.T) {
+	result, err := Parse("ALTER TABLE orders AUTO_INCREMENT = 99999999")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ChangeAutoIncrement {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ChangeAutoIncrement)
+	}
+	if result.Table != "orders" {
+		t.Errorf("Table = %q, want %q", result.Table, "orders")
 	}
 }
 
@@ -854,5 +869,146 @@ func TestParse_ChangeColumn_ExtractsNewColumnType(t *testing.T) {
 				t.Errorf("NewColumnType = %q, want %q", result.NewColumnType, tt.newColumnType)
 			}
 		})
+	}
+}
+
+// =============================================================
+// New operation parser tests (Phase 2)
+// =============================================================
+
+func TestParse_RenameIndex(t *testing.T) {
+	result, err := Parse("ALTER TABLE orders RENAME INDEX idx_customer_id TO idx_cust")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != RenameIndex {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, RenameIndex)
+	}
+	if result.Table != "orders" {
+		t.Errorf("Table = %q, want %q", result.Table, "orders")
+	}
+}
+
+func TestParse_AddFulltextIndex(t *testing.T) {
+	result, err := Parse("ALTER TABLE audit_log ADD FULLTEXT INDEX ft_action (action)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddFulltextIndex {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddFulltextIndex)
+	}
+}
+
+func TestParse_AddSpatialIndex(t *testing.T) {
+	result, err := Parse("ALTER TABLE geo_test ADD SPATIAL INDEX idx_geo (g)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddSpatialIndex {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddSpatialIndex)
+	}
+}
+
+func TestParse_ForceRebuild(t *testing.T) {
+	result, err := Parse("ALTER TABLE orders FORCE")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ForceRebuild {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ForceRebuild)
+	}
+	if result.Table != "orders" {
+		t.Errorf("Table = %q, want %q", result.Table, "orders")
+	}
+}
+
+func TestParse_ReorganizePartition(t *testing.T) {
+	sql := `ALTER TABLE partition_test REORGANIZE PARTITION pmax INTO (
+		PARTITION p2026 VALUES LESS THAN (2027),
+		PARTITION pmax VALUES LESS THAN MAXVALUE
+	)`
+	result, err := Parse(sql)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ReorganizePartition {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ReorganizePartition)
+	}
+}
+
+func TestParse_RebuildPartition(t *testing.T) {
+	result, err := Parse("ALTER TABLE partition_test REBUILD PARTITION p2024")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != RebuildPartition {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, RebuildPartition)
+	}
+}
+
+func TestParse_TruncatePartition(t *testing.T) {
+	result, err := Parse("ALTER TABLE partition_test TRUNCATE PARTITION p2023")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != TruncatePartition {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, TruncatePartition)
+	}
+}
+
+func TestParse_ModifyColumn_IsFirstAfter(t *testing.T) {
+	// MODIFY COLUMN with AFTER should set IsFirstAfter=true
+	result, err := Parse("ALTER TABLE t MODIFY COLUMN name VARCHAR(100) AFTER id")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ModifyColumn {
+		t.Errorf("DDLOp = %q, want ModifyColumn", result.DDLOp)
+	}
+	if !result.IsFirstAfter {
+		t.Error("IsFirstAfter = false, want true for MODIFY COLUMN ... AFTER")
+	}
+	if result.NewColumnType != "varchar(100)" {
+		t.Errorf("NewColumnType = %q, want %q", result.NewColumnType, "varchar(100)")
+	}
+}
+
+func TestParse_ModifyColumn_NotNull_SetsNullable(t *testing.T) {
+	result, err := Parse("ALTER TABLE t MODIFY COLUMN name VARCHAR(100) NOT NULL")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ModifyColumn {
+		t.Errorf("DDLOp = %q, want ModifyColumn", result.DDLOp)
+	}
+	if result.NewColumnNullable == nil {
+		t.Fatal("NewColumnNullable = nil, want *false (NOT NULL specified)")
+	}
+	if *result.NewColumnNullable != false {
+		t.Errorf("*NewColumnNullable = %v, want false (NOT NULL)", *result.NewColumnNullable)
+	}
+}
+
+func TestParse_ModifyColumn_Null_SetsNullable(t *testing.T) {
+	result, err := Parse("ALTER TABLE t MODIFY COLUMN name VARCHAR(100) NULL")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.NewColumnNullable == nil {
+		t.Fatal("NewColumnNullable = nil, want *true (NULL specified)")
+	}
+	if *result.NewColumnNullable != true {
+		t.Errorf("*NewColumnNullable = %v, want true (NULL)", *result.NewColumnNullable)
+	}
+}
+
+func TestParse_ModifyColumn_NoNullSpec_NilNullable(t *testing.T) {
+	// No NULL/NOT NULL → NewColumnNullable should be nil
+	result, err := Parse("ALTER TABLE t MODIFY COLUMN name VARCHAR(100)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.NewColumnNullable != nil {
+		t.Errorf("NewColumnNullable = %v, want nil (nullability not specified)", result.NewColumnNullable)
 	}
 }

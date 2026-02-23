@@ -36,13 +36,21 @@ const (
 	ChangeCharset   DDLOperation = "CHANGE_CHARSET"   // ALTER TABLE ... CHARACTER SET = ... (table default only)
 	ConvertCharset  DDLOperation = "CONVERT_CHARSET"  // ALTER TABLE ... CONVERT TO CHARACTER SET ... (rewrites all columns)
 	ChangeRowFormat DDLOperation = "CHANGE_ROW_FORMAT"
-	AddPartition    DDLOperation = "ADD_PARTITION"
-	DropPartition   DDLOperation = "DROP_PARTITION"
-	SetDefault      DDLOperation = "SET_DEFAULT"
-	DropDefault     DDLOperation = "DROP_DEFAULT"
-	MultipleOps     DDLOperation = "MULTIPLE_OPS"
-	CreateTable     DDLOperation = "CREATE_TABLE"
-	OtherDDL        DDLOperation = "OTHER"
+	AddPartition        DDLOperation = "ADD_PARTITION"
+	DropPartition       DDLOperation = "DROP_PARTITION"
+	ReorganizePartition DDLOperation = "REORGANIZE_PARTITION"
+	RebuildPartition    DDLOperation = "REBUILD_PARTITION"
+	TruncatePartition   DDLOperation = "TRUNCATE_PARTITION"
+	SetDefault          DDLOperation = "SET_DEFAULT"
+	DropDefault         DDLOperation = "DROP_DEFAULT"
+	RenameIndex         DDLOperation = "RENAME_INDEX"
+	AddFulltextIndex    DDLOperation = "ADD_FULLTEXT_INDEX"
+	AddSpatialIndex     DDLOperation = "ADD_SPATIAL_INDEX"
+	ChangeAutoIncrement DDLOperation = "CHANGE_AUTO_INCREMENT"
+	ForceRebuild        DDLOperation = "FORCE_REBUILD"
+	MultipleOps         DDLOperation = "MULTIPLE_OPS"
+	CreateTable         DDLOperation = "CREATE_TABLE"
+	OtherDDL            DDLOperation = "OTHER"
 )
 
 // DMLOperation enumerates DML operations.
@@ -68,13 +76,14 @@ type ParsedSQL struct {
 	ColumnName    string         // for ADD/DROP/MODIFY COLUMN
 	OldColumnName string         // for CHANGE COLUMN
 	NewColumnName string         // for CHANGE COLUMN
-	NewColumnType string         // for CHANGE/MODIFY COLUMN: the new column type (e.g. "decimal(14,4)")
-	ColumnDef     string         // full column definition for ADD COLUMN
-	IsFirstAfter  bool           // ADD COLUMN ... FIRST or AFTER
-	IndexName     string         // for ADD/DROP INDEX
-	HasNotNull    bool           // ADD COLUMN ... NOT NULL
-	HasDefault    bool           // ADD COLUMN ... DEFAULT
-	DDLOperations []DDLOperation // for multi-op ALTER TABLE
+	NewColumnType     string         // for CHANGE/MODIFY COLUMN: the new column type (e.g. "decimal(14,4)")
+	NewColumnNullable *bool          // for MODIFY COLUMN: nil=unspecified, *true=NULL, *false=NOT NULL
+	ColumnDef         string         // full column definition for ADD COLUMN
+	IsFirstAfter      bool           // ADD COLUMN/MODIFY COLUMN ... FIRST or AFTER
+	IndexName         string         // for ADD/DROP INDEX
+	HasNotNull        bool           // ADD COLUMN ... NOT NULL
+	HasDefault        bool           // ADD COLUMN ... DEFAULT
+	DDLOperations     []DDLOperation // for multi-op ALTER TABLE
 }
 
 var (
@@ -199,6 +208,15 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 		case sqlparser.DropAction:
 			result.DDLOp = DropPartition
 			return
+		case sqlparser.ReorganizeAction:
+			result.DDLOp = ReorganizePartition
+			return
+		case sqlparser.RebuildAction:
+			result.DDLOp = RebuildPartition
+			return
+		case sqlparser.TruncateAction:
+			result.DDLOp = TruncatePartition
+			return
 		}
 	}
 
@@ -253,6 +271,14 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 			typeBuf := sqlparser.NewTrackedBuffer(nil)
 			opt.NewColDefinition.Type.Format(typeBuf)
 			result.NewColumnType = strings.ToLower(typeBuf.String())
+			// Detect explicit NULL/NOT NULL specification for nullability-change detection
+			if opt.NewColDefinition.Type.Options != nil {
+				result.NewColumnNullable = opt.NewColDefinition.Type.Options.Null
+			}
+		}
+		// Detect FIRST/AFTER for column reordering
+		if opt.First || opt.After != nil {
+			result.IsFirstAfter = true
 		}
 
 	case *sqlparser.ChangeColumn:
@@ -284,8 +310,13 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 	case *sqlparser.ChangeColumn:
 		return ChangeColumn
 	case *sqlparser.AddIndexDefinition:
-		if opt.IndexDefinition.Info.Type == sqlparser.IndexTypePrimary {
+		switch opt.IndexDefinition.Info.Type {
+		case sqlparser.IndexTypePrimary:
 			return AddPrimaryKey
+		case sqlparser.IndexTypeFullText:
+			return AddFulltextIndex
+		case sqlparser.IndexTypeSpatial:
+			return AddSpatialIndex
 		}
 		return AddIndex
 	case *sqlparser.DropKey:
@@ -297,6 +328,10 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 		default:
 			return DropIndex
 		}
+	case *sqlparser.RenameIndex:
+		return RenameIndex
+	case *sqlparser.Force:
+		return ForceRebuild
 	case *sqlparser.AddConstraintDefinition:
 		return AddForeignKey
 	case *sqlparser.AlterCharset:
@@ -318,6 +353,8 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 				return ChangeRowFormat
 			case "CHARSET", "CHARACTER SET":
 				return ChangeCharset
+			case "AUTO_INCREMENT":
+				return ChangeAutoIncrement
 			}
 		}
 		return OtherDDL

@@ -215,13 +215,66 @@ func analyzeDDL(input Input, result *Result) {
 		}
 	}
 
-	// For MODIFY COLUMN: check if the change qualifies for INPLACE.
-	// MySQL allows INPLACE for VARCHAR extension when the length prefix size doesn't change
-	// (both old and new fit within the same 1-byte or 2-byte prefix tier).
+	// For MODIFY COLUMN: apply sub-type classification overrides in priority order.
+	// These overrides refine the COPY baseline from the matrix using live schema metadata.
 	if input.Parsed.DDLOp == parser.ModifyColumn && input.Parsed.NewColumnType != "" {
-		if oldType := findColumnType(input.Meta.Columns, input.Parsed.ColumnName); oldType != "" {
-			if cls, ok := classifyModifyColumnVarchar(oldType, input.Parsed.NewColumnType, findColumnCharset(input.Meta.Columns, input.Parsed.ColumnName)); ok {
+		oldType := findColumnType(input.Meta.Columns, input.Parsed.ColumnName)
+		if oldType != "" {
+			charset := findColumnCharset(input.Meta.Columns, input.Parsed.ColumnName)
+
+			// Priority 1: ENUM/SET append-at-end → INSTANT (metadata-only).
+			// Only applies when the new list is a strict superset with additions only at the end.
+			if cls, ok := classifyModifyColumnEnum(oldType, input.Parsed.NewColumnType); ok {
 				result.Classification = cls
+			} else if cls, ok := classifyModifyColumnVarchar(oldType, input.Parsed.NewColumnType, charset); ok {
+				// Priority 2: VARCHAR extension within same length-prefix tier → INPLACE, no rebuild.
+				result.Classification = cls
+			}
+		}
+	}
+
+	// For MODIFY COLUMN with FIRST/AFTER: column reorder forces a table rebuild.
+	// If the same-type detection above already gave INPLACE (e.g. varchar same-tier), we upgrade
+	// rebuild to true. If type is changing (COPY), we leave it alone — type change takes precedence.
+	if input.Parsed.DDLOp == parser.ModifyColumn && input.Parsed.IsFirstAfter {
+		oldType := findColumnType(input.Meta.Columns, input.Parsed.ColumnName)
+		if oldType != "" {
+			newBase := strings.ToLower(strings.SplitN(strings.TrimSpace(input.Parsed.NewColumnType), " ", 2)[0])
+			if strings.EqualFold(strings.ReplaceAll(oldType, " ", ""), strings.ReplaceAll(newBase, " ", "")) {
+				// Same type, just reordering — INPLACE with rebuild.
+				result.Classification = DDLClassification{
+					Algorithm:     AlgoInplace,
+					Lock:          LockNone,
+					RebuildsTable: true,
+					Notes:         "Column reorder (FIRST/AFTER) with same type: INPLACE with table rebuild, concurrent DML allowed.",
+				}
+			}
+			// If types differ, the existing classification (COPY) already covers the type-change case.
+		}
+	}
+
+	// For MODIFY COLUMN: nullability change (NULL ↔ NOT NULL) with same base type → INPLACE rebuild.
+	// Checked after reorder so both can co-apply; the result is the same (INPLACE + rebuild).
+	if input.Parsed.DDLOp == parser.ModifyColumn && input.Parsed.NewColumnNullable != nil && input.Parsed.NewColumnType != "" {
+		oldType := findColumnType(input.Meta.Columns, input.Parsed.ColumnName)
+		if oldType != "" {
+			newBase := strings.ToLower(strings.SplitN(strings.TrimSpace(input.Parsed.NewColumnType), " ", 2)[0])
+			sameBaseType := strings.EqualFold(strings.ReplaceAll(oldType, " ", ""), strings.ReplaceAll(newBase, " ", ""))
+			if sameBaseType {
+				for _, col := range input.Meta.Columns {
+					if strings.EqualFold(col.Name, input.Parsed.ColumnName) {
+						newNullable := *input.Parsed.NewColumnNullable
+						if newNullable != col.Nullable {
+							result.Classification = DDLClassification{
+								Algorithm:     AlgoInplace,
+								Lock:          LockNone,
+								RebuildsTable: true,
+								Notes:         "Nullability change (NULL ↔ NOT NULL) with same base type: INPLACE with table rebuild, concurrent DML allowed.",
+							}
+						}
+						break
+					}
+				}
 			}
 		}
 	}
@@ -544,6 +597,80 @@ func extractVarcharLength(typeStr string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// classifyModifyColumnEnum checks if a MODIFY COLUMN ENUM/SET change is a pure append-at-end.
+// MySQL stores ENUM/SET values as integer indexes; appending new members at the end doesn't
+// change the mapping for existing rows, so it qualifies for INSTANT (metadata-only).
+// Inserting, reordering, or removing members changes the integer mapping → COPY required.
+// Returns (classification, true) if INSTANT is safe, (zero, false) otherwise.
+func classifyModifyColumnEnum(oldType, newType string) (DDLClassification, bool) {
+	oldMembers, oldOK := parseEnumMembers(oldType)
+	newMembers, newOK := parseEnumMembers(newType)
+	if !oldOK || !newOK {
+		return DDLClassification{}, false
+	}
+
+	// New list must have more members than the old list.
+	if len(newMembers) <= len(oldMembers) {
+		return DDLClassification{}, false
+	}
+
+	// The old members must appear in the same order at the start of the new list.
+	for i, m := range oldMembers {
+		if !strings.EqualFold(m, newMembers[i]) {
+			return DDLClassification{}, false
+		}
+	}
+
+	return DDLClassification{
+		Algorithm:     AlgoInstant,
+		Lock:          LockNone,
+		RebuildsTable: false,
+		Notes: fmt.Sprintf(
+			"ENUM/SET values appended at the end (%d → %d members): INSTANT, metadata-only. "+
+				"Existing rows retain their stored integer representation.",
+			len(oldMembers), len(newMembers),
+		),
+	}, true
+}
+
+// parseEnumMembers extracts the member list from a MySQL ENUM or SET type string.
+// Handles types like: enum('a','b','c') or set('x','y').
+// Returns the member list and true on success, nil and false otherwise.
+func parseEnumMembers(typeStr string) ([]string, bool) {
+	s := strings.TrimSpace(strings.ToLower(typeStr))
+	if (!strings.HasPrefix(s, "enum(") && !strings.HasPrefix(s, "set(")) || !strings.HasSuffix(s, ")") {
+		return nil, false
+	}
+
+	// Find the opening paren.
+	parenIdx := strings.IndexByte(s, '(')
+	if parenIdx < 0 {
+		return nil, false
+	}
+	inner := s[parenIdx+1 : len(s)-1]
+
+	var members []string
+	var current strings.Builder
+	inQuote := false
+	for _, ch := range inner {
+		switch {
+		case ch == '\'' && !inQuote:
+			inQuote = true
+		case ch == '\'' && inQuote:
+			members = append(members, current.String())
+			current.Reset()
+			inQuote = false
+		case inQuote:
+			current.WriteRune(ch)
+		}
+	}
+
+	if len(members) == 0 {
+		return nil, false
+	}
+	return members, true
 }
 
 // classifyModifyColumnVarchar checks if a MODIFY COLUMN VARCHAR change qualifies for INPLACE.

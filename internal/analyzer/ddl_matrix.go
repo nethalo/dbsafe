@@ -261,6 +261,88 @@ var ddlMatrix = map[matrixKey]DDLClassification{
 	{parser.ChangeRowFormat, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
 
 	// ═══════════════════════════════════════════════════
+	// RENAME INDEX
+	// Metadata-only. MySQL renames the index in the data dictionary without touching data pages.
+	// ═══════════════════════════════════════════════════
+	{parser.RenameIndex, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Very fast."},
+	{parser.RenameIndex, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Very fast."},
+	{parser.RenameIndex, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Very fast."},
+	{parser.RenameIndex, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Very fast."},
+
+	// ═══════════════════════════════════════════════════
+	// ADD FULLTEXT INDEX
+	// INPLACE with SHARED lock — concurrent DML is blocked.
+	// Conservative baseline: RebuildsTable=true because the FIRST FULLTEXT index requires a
+	// table rebuild to add the hidden FTS_DOC_ID column. Subsequent FULLTEXT indexes do not
+	// rebuild. The analyzer cannot currently distinguish first vs. subsequent without live
+	// metadata inspection, so we use the worst-case baseline.
+	// ═══════════════════════════════════════════════════
+	{parser.AddFulltextIndex, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: true, Notes: "INPLACE with SHARED lock — writes blocked. First FULLTEXT index rebuilds the table to add FTS_DOC_ID column; subsequent ones do not."},
+	{parser.AddFulltextIndex, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: true, Notes: "INPLACE with SHARED lock — writes blocked. First FULLTEXT index rebuilds the table to add FTS_DOC_ID column; subsequent ones do not."},
+	{parser.AddFulltextIndex, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: true, Notes: "INPLACE with SHARED lock — writes blocked. First FULLTEXT index rebuilds the table to add FTS_DOC_ID column; subsequent ones do not."},
+	{parser.AddFulltextIndex, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: true, Notes: "INPLACE with SHARED lock — writes blocked. First FULLTEXT index rebuilds the table to add FTS_DOC_ID column; subsequent ones do not."},
+
+	// ═══════════════════════════════════════════════════
+	// ADD SPATIAL INDEX
+	// INPLACE but requires SHARED lock — concurrent DML is blocked.
+	// ═══════════════════════════════════════════════════
+	{parser.AddSpatialIndex, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked during spatial index build."},
+	{parser.AddSpatialIndex, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked during spatial index build."},
+	{parser.AddSpatialIndex, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked during spatial index build."},
+	{parser.AddSpatialIndex, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked during spatial index build."},
+
+	// ═══════════════════════════════════════════════════
+	// CHANGE AUTO_INCREMENT
+	// Modifies the next auto-increment counter value in memory and data dictionary.
+	// No row rewrite; INPLACE with no lock.
+	// ═══════════════════════════════════════════════════
+	{parser.ChangeAutoIncrement, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, no row rewrite. Updates the auto-increment counter in the data dictionary."},
+	{parser.ChangeAutoIncrement, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, no row rewrite. Updates the auto-increment counter in the data dictionary."},
+	{parser.ChangeAutoIncrement, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, no row rewrite. Updates the auto-increment counter in the data dictionary."},
+	{parser.ChangeAutoIncrement, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, no row rewrite. Updates the auto-increment counter in the data dictionary."},
+
+	// ═══════════════════════════════════════════════════
+	// FORCE REBUILD (ALTER TABLE ... FORCE)
+	// Equivalent to ENGINE=InnoDB for InnoDB tables: rebuilds the clustered index and all
+	// secondary indexes in place. Reclaims space, resets TOTAL_ROW_VERSIONS for INSTANT columns.
+	// ═══════════════════════════════════════════════════
+	{parser.ForceRebuild, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Reclaims fragmented space. Concurrent DML allowed during rebuild."},
+	{parser.ForceRebuild, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Reclaims fragmented space. Concurrent DML allowed during rebuild."},
+	{parser.ForceRebuild, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Reclaims fragmented space and resets TOTAL_ROW_VERSIONS counter."},
+	{parser.ForceRebuild, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with table rebuild. Reclaims fragmented space and resets TOTAL_ROW_VERSIONS counter."},
+
+	// ═══════════════════════════════════════════════════
+	// REORGANIZE PARTITION
+	// Copies data between partition definitions. Does not rebuild the full table.
+	// Requires SHARED lock — concurrent writes (DML) are blocked during the operation.
+	// ═══════════════════════════════════════════════════
+	{parser.ReorganizePartition, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked. Copies data between partition definitions; other partitions are untouched."},
+	{parser.ReorganizePartition, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked. Copies data between partition definitions; other partitions are untouched."},
+	{parser.ReorganizePartition, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked. Copies data between partition definitions; other partitions are untouched."},
+	{parser.ReorganizePartition, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked. Copies data between partition definitions; other partitions are untouched."},
+
+	// ═══════════════════════════════════════════════════
+	// REBUILD PARTITION
+	// Defragments and rebuilds the specified partition(s) in-place.
+	// Requires SHARED lock — concurrent writes are blocked. Other partitions are unaffected.
+	// ═══════════════════════════════════════════════════
+	{parser.RebuildPartition, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked. Defragments the specified partition(s) only; other partitions untouched."},
+	{parser.RebuildPartition, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked. Defragments the specified partition(s) only; other partitions untouched."},
+	{parser.RebuildPartition, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked. Defragments the specified partition(s) only; other partitions untouched."},
+	{parser.RebuildPartition, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: false, Notes: "INPLACE with SHARED lock — writes blocked. Defragments the specified partition(s) only; other partitions untouched."},
+
+	// ═══════════════════════════════════════════════════
+	// TRUNCATE PARTITION
+	// Drops all rows in the specified partition without rebuilding the structure.
+	// Requires EXCLUSIVE lock on the affected partition (analogous to TRUNCATE TABLE).
+	// Other partitions remain accessible.
+	// ═══════════════════════════════════════════════════
+	{parser.TruncatePartition, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockExclusive, RebuildsTable: false, Notes: "INPLACE with EXCLUSIVE lock on the affected partition. Drops all rows; partition structure remains. Other partitions are accessible."},
+	{parser.TruncatePartition, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockExclusive, RebuildsTable: false, Notes: "INPLACE with EXCLUSIVE lock on the affected partition. Drops all rows; partition structure remains. Other partitions are accessible."},
+	{parser.TruncatePartition, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockExclusive, RebuildsTable: false, Notes: "INPLACE with EXCLUSIVE lock on the affected partition. Drops all rows; partition structure remains. Other partitions are accessible."},
+	{parser.TruncatePartition, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockExclusive, RebuildsTable: false, Notes: "INPLACE with EXCLUSIVE lock on the affected partition. Drops all rows; partition structure remains. Other partitions are accessible."},
+
+	// ═══════════════════════════════════════════════════
 	// ADD PARTITION
 	// INPLACE, no rebuild of existing partitions.
 	// ═══════════════════════════════════════════════════
