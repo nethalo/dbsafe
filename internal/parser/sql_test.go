@@ -1299,6 +1299,36 @@ func TestParse_OptimizeTable(t *testing.T) {
 	}
 }
 
+// Regression #37: ALTER TABLE ... ENGINE=InnoDB must extract NewEngine.
+func TestParse_ChangeEngine_ExtractsEngineName(t *testing.T) {
+	result, err := Parse("ALTER TABLE orders ENGINE=InnoDB")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ChangeEngine {
+		t.Errorf("DDLOp = %v, want CHANGE_ENGINE", result.DDLOp)
+	}
+	if result.NewEngine != "innodb" {
+		t.Errorf("NewEngine = %q, want \"innodb\"", result.NewEngine)
+	}
+}
+
+// Regression #38: ALTER TABLE ... RENAME TO must parse as RENAME_TABLE (not OTHER).
+func TestParse_AlterTableRenameTO_IsRenameTable(t *testing.T) {
+	for _, sql := range []string{
+		"ALTER TABLE products RENAME TO product_catalog",
+		"ALTER TABLE products RENAME product_catalog",
+	} {
+		result, err := Parse(sql)
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", sql, err)
+		}
+		if result.DDLOp != RenameTable {
+			t.Errorf("%q: DDLOp = %v, want RENAME_TABLE", sql, result.DDLOp)
+		}
+	}
+}
+
 func TestParse_AlterTablespace(t *testing.T) {
 	result, err := Parse("ALTER TABLESPACE ts1 RENAME TO ts2")
 	if err != nil {

@@ -113,6 +113,7 @@ type ParsedSQL struct {
 	TablespaceName    string         // for ALTER TABLESPACE
 	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
 	IndexColumns      []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names
+	NewEngine         string         // for ENGINE=<name>: the target engine (lowercased)
 }
 
 var (
@@ -410,6 +411,15 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 
 	case *sqlparser.DropKey:
 		result.IndexName = opt.Name.String()
+
+	case sqlparser.TableOptions:
+		// Extract the target engine name for ENGINE= changes (used to detect same-engine rebuilds).
+		for _, tableOpt := range opt {
+			if strings.ToUpper(tableOpt.Name) == "ENGINE" && tableOpt.String != "" {
+				result.NewEngine = strings.ToLower(tableOpt.String)
+				break
+			}
+		}
 	}
 }
 
@@ -444,6 +454,8 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 		}
 	case *sqlparser.RenameIndex:
 		return RenameIndex
+	case *sqlparser.RenameTableName:
+		return RenameTable
 	case *sqlparser.Force:
 		return ForceRebuild
 	case *sqlparser.AddConstraintDefinition:

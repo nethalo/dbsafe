@@ -510,6 +510,82 @@ func TestSpec_6_6_ForceRebuild(t *testing.T) {
 	}
 }
 
+// 6.6b ENGINE=InnoDB on an InnoDB table (same-engine rebuild) — INPLACE+rebuild, not COPY.
+// Regression for #37: the COPY matrix baseline applies to engine conversions; same-engine is FORCE.
+func TestSpec_6_6b_SameEngineRebuild_IsInplace(t *testing.T) {
+	sql := "ALTER TABLE orders ENGINE=InnoDB"
+	parsed, err := parser.Parse(sql)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if parsed.NewEngine != "innodb" {
+		t.Fatalf("NewEngine = %q, want \"innodb\"", parsed.NewEngine)
+	}
+
+	meta := &mysql.TableMetadata{Engine: "InnoDB"}
+	result := Analyze(Input{
+		Parsed:  parsed,
+		Meta:    meta,
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	})
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Algorithm = %q, want INPLACE (regression for #37)", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockNone {
+		t.Errorf("Lock = %q, want NONE", result.Classification.Lock)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Errorf("RebuildsTable = false, want true")
+	}
+}
+
+// 6.6b ENGINE=MyISAM on an InnoDB table (cross-engine conversion) — COPY baseline preserved.
+func TestSpec_6_6c_CrossEngineChange_IsCopy(t *testing.T) {
+	sql := "ALTER TABLE orders ENGINE=MyISAM"
+	parsed, err := parser.Parse(sql)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+
+	meta := &mysql.TableMetadata{Engine: "InnoDB"}
+	result := Analyze(Input{
+		Parsed:  parsed,
+		Meta:    meta,
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	})
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("Algorithm = %q, want COPY for cross-engine change", result.Classification.Algorithm)
+	}
+}
+
+// 6.8 ALTER TABLE ... RENAME TO — INSTANT (metadata-only). Regression for #38.
+// The ALTER TABLE form must be classified identically to standalone RENAME TABLE.
+func TestSpec_6_8_AlterTableRenameTO_IsInstant(t *testing.T) {
+	sql := "ALTER TABLE products RENAME TO product_catalog"
+	parsed, err := parser.Parse(sql)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if parsed.DDLOp != parser.RenameTable {
+		t.Fatalf("DDLOp = %v, want RENAME_TABLE (regression for #38)", parsed.DDLOp)
+	}
+
+	result := Analyze(Input{
+		Parsed:  parsed,
+		Meta:    &mysql.TableMetadata{},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	})
+	if result.Classification.Algorithm != AlgoInstant {
+		t.Errorf("Algorithm = %q, want INSTANT (regression for #38)", result.Classification.Algorithm)
+	}
+	if result.Classification.RebuildsTable {
+		t.Errorf("RebuildsTable = true, want false")
+	}
+}
+
 // =============================================================
 // Section 8: Partitioning Operations
 // =============================================================

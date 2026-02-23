@@ -274,6 +274,23 @@ func analyzeDDL(input Input, result *Result) {
 		)
 	}
 
+	// For ENGINE= same-engine (e.g. ENGINE=InnoDB on an InnoDB table): MySQL treats this as a
+	// null ALTER TABLE operation — identical to ALTER TABLE ... FORCE. The table is rebuilt
+	// INPLACE to reclaim fragmentation and reset TOTAL_ROW_VERSIONS. The matrix baseline for
+	// ChangeEngine is COPY (cross-engine conversion); override to INPLACE+rebuild when the
+	// target engine matches the current engine.
+	if input.Parsed.DDLOp == parser.ChangeEngine &&
+		input.Parsed.NewEngine != "" &&
+		input.Meta != nil &&
+		strings.EqualFold(input.Parsed.NewEngine, input.Meta.Engine) {
+		result.Classification = DDLClassification{
+			Algorithm:     AlgoInplace,
+			Lock:          LockNone,
+			RebuildsTable: true,
+			Notes:         "ENGINE=<same engine>: equivalent to ALTER TABLE ... FORCE. INPLACE rebuild to reclaim fragmentation. Concurrent DML allowed.",
+		}
+	}
+
 	// For ADD FOREIGN KEY: the matrix baseline (INPLACE+NONE) applies only when
 	// foreign_key_checks=OFF. With the default foreign_key_checks=ON, MySQL must validate all
 	// existing rows against the new constraint, which requires COPY+SHARED (no concurrent writes).
