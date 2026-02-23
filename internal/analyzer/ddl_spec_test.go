@@ -932,6 +932,35 @@ func TestSpec_6_3_StatsOption_IsInplace(t *testing.T) {
 	}
 }
 
+// 6.3b Multiple STATS options in a single ALTER TABLE — regression for #36
+// All sub-operations are INPLACE; aggregate must be INPLACE, not COPY.
+func TestSpec_6_3b_MultipleStatsOptions_IsInplace(t *testing.T) {
+	sql := "ALTER TABLE orders STATS_PERSISTENT=0, STATS_SAMPLE_PAGES=20, STATS_AUTO_RECALC=1"
+	parsed, err := parser.Parse(sql)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if parsed.DDLOp != parser.MultipleOps {
+		t.Fatalf("DDLOp = %v, want MULTIPLE_OPS", parsed.DDLOp)
+	}
+
+	result := Analyze(Input{
+		Parsed:  parsed,
+		Meta:    &mysql.TableMetadata{},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	})
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Algorithm = %q, want INPLACE (regression for #36)", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockNone {
+		t.Errorf("Lock = %q, want NONE", result.Classification.Lock)
+	}
+	if result.Classification.RebuildsTable {
+		t.Errorf("RebuildsTable = true, want false")
+	}
+}
+
 // =============================================================
 // Section 7 (new): Table Encryption — §7.2
 // =============================================================
