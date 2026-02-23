@@ -8,6 +8,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-02-23
+
+### Added
+- 8 new DDL operation classifications: `RENAME INDEX`, `ADD FULLTEXT INDEX`, `ADD SPATIAL INDEX`, `AUTO_INCREMENT =`, `ALTER TABLE FORCE`, `REORGANIZE PARTITION`, `REBUILD PARTITION`, `TRUNCATE PARTITION` — each with correct algorithm, lock, and rebuild flags across all supported MySQL version ranges
+- `MODIFY COLUMN` sub-classification overrides using live schema metadata:
+  - ENUM/SET append-at-end → `INSTANT` (metadata-only; new members appended after all existing ones preserve stored integer representation)
+  - Column reorder (`MODIFY ... FIRST/AFTER`) with same base type → `INPLACE + rebuild`
+  - Nullability change (`NULL ↔ NOT NULL`) with same base type → `INPLACE + rebuild`
+- `ParsedSQL.NewColumnNullable *bool` field: parser now captures explicit `NULL`/`NOT NULL` on `MODIFY COLUMN` for nullability-change detection
+- `MODIFY COLUMN` now detects `FIRST`/`AFTER` positioning (previously only `ADD COLUMN` set `IsFirstAfter`)
+- Spec-driven test suite (`ddl_spec_test.go`): 21 test functions covering all new operations, ENUM append/reorder, column reorder, and nullability edge cases
+- 15 new parser tests for new operations and nullable field extraction
+
+### Fixed
+- `REORGANIZE PARTITION` and `REBUILD PARTITION` lock level corrected to `SHARED` (`LockNone` was wrong — concurrent DML is blocked during these operations)
+- `TRUNCATE PARTITION` lock level corrected to `EXCLUSIVE` (analogous to `TRUNCATE TABLE`)
+- `ADD FULLTEXT INDEX` `RebuildsTable` corrected to `true` (conservative baseline — first FULLTEXT index rebuilds the table to add the hidden `FTS_DOC_ID` column)
+- `AUTO_INCREMENT = N` was previously classified as `OtherDDL → COPY`; now correctly `INPLACE, LOCK=NONE`
+
 ## [0.3.2] - 2026-02-22
 
 ### Fixed
