@@ -234,13 +234,15 @@ var ddlMatrix = map[matrixKey]DDLClassification{
 
 	// ═══════════════════════════════════════════════════
 	// ADD PRIMARY KEY
-	// InnoDB organizes data around the clustered index, so adding a primary key
-	// always requires a full table rebuild across all versions.
+	// INPLACE with full table rebuild — InnoDB must reorganize rows around the new clustered
+	// index. Concurrent DML is allowed. Exception: if any PK column is nullable, MySQL must
+	// first convert it to NOT NULL, which requires COPY. The analyzer upgrades to COPY when
+	// live schema metadata shows a nullable PK column.
 	// ═══════════════════════════════════════════════════
-	{parser.AddPrimaryKey, V8_0_Early}:   {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows around the new clustered index."},
-	{parser.AddPrimaryKey, V8_0_Instant}: {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows around the new clustered index."},
-	{parser.AddPrimaryKey, V8_0_Full}:    {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows around the new clustered index."},
-	{parser.AddPrimaryKey, V8_4_LTS}:     {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "Full table rebuild required. InnoDB must reorganize all rows around the new clustered index."},
+	{parser.AddPrimaryKey, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with full table rebuild. Concurrent DML allowed. Requires all PK columns to be NOT NULL; nullable PK columns require COPY."},
+	{parser.AddPrimaryKey, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with full table rebuild. Concurrent DML allowed. Requires all PK columns to be NOT NULL; nullable PK columns require COPY."},
+	{parser.AddPrimaryKey, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with full table rebuild. Concurrent DML allowed. Requires all PK columns to be NOT NULL; nullable PK columns require COPY."},
+	{parser.AddPrimaryKey, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with full table rebuild. Concurrent DML allowed. Requires all PK columns to be NOT NULL; nullable PK columns require COPY."},
 
 	// ═══════════════════════════════════════════════════
 	// DROP PRIMARY KEY

@@ -535,6 +535,22 @@ func TestParse_AlterTableAddPrimaryKey(t *testing.T) {
 	if result.DDLOp != AddPrimaryKey {
 		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddPrimaryKey)
 	}
+	if len(result.IndexColumns) != 1 || result.IndexColumns[0] != "id" {
+		t.Errorf("IndexColumns = %v, want [id]", result.IndexColumns)
+	}
+}
+
+func TestParse_AlterTableAddPrimaryKey_MultiCol(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ADD PRIMARY KEY (a, b)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddPrimaryKey {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddPrimaryKey)
+	}
+	if len(result.IndexColumns) != 2 || result.IndexColumns[0] != "a" || result.IndexColumns[1] != "b" {
+		t.Errorf("IndexColumns = %v, want [a b]", result.IndexColumns)
+	}
 }
 
 func TestParse_AlterTableChangeEngine(t *testing.T) {

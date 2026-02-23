@@ -231,18 +231,80 @@ func TestClassifyDDL_RenameTable(t *testing.T) {
 }
 
 func TestClassifyDDL_AddPrimaryKey(t *testing.T) {
-	// All versions: COPY + SHARED + table rebuild
+	// All versions: INPLACE + NONE lock + table rebuild (baseline for NOT NULL columns).
+	// Nullable PK columns are upgraded to COPY by the analyzer context check.
 	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
 		c := ClassifyDDL(parser.AddPrimaryKey, v.Major, v.Minor, v.Patch)
-		if c.Algorithm != AlgoCopy {
-			t.Errorf("v%d.%d.%d: Algorithm = %q, want COPY", v.Major, v.Minor, v.Patch, c.Algorithm)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
 		}
-		if c.Lock != LockShared {
-			t.Errorf("v%d.%d.%d: Lock = %q, want SHARED", v.Major, v.Minor, v.Patch, c.Lock)
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
 		}
 		if !c.RebuildsTable {
 			t.Errorf("v%d.%d.%d: RebuildsTable = false, want true", v.Major, v.Minor, v.Patch)
 		}
+	}
+}
+
+func TestAnalyzeDDL_AddPrimaryKey_NotNullColumn(t *testing.T) {
+	// ADD PRIMARY KEY on a NOT NULL column: baseline INPLACE with rebuild.
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:         parser.DDL,
+			RawSQL:       "ALTER TABLE t ADD PRIMARY KEY (a)",
+			Table:        "t",
+			DDLOp:        parser.AddPrimaryKey,
+			IndexColumns: []string{"a"},
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "t",
+			Columns: []mysql.ColumnInfo{
+				{Name: "a", Type: "int", Nullable: false},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    &topology.Info{Type: topology.Standalone},
+	}
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockNone {
+		t.Errorf("Lock = %q, want NONE", result.Classification.Lock)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Errorf("RebuildsTable = false, want true")
+	}
+}
+
+func TestAnalyzeDDL_AddPrimaryKey_NullableColumn(t *testing.T) {
+	// ADD PRIMARY KEY on a nullable column: must upgrade to COPY (MySQL enforces NOT NULL).
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:         parser.DDL,
+			RawSQL:       "ALTER TABLE t ADD PRIMARY KEY (a)",
+			Table:        "t",
+			DDLOp:        parser.AddPrimaryKey,
+			IndexColumns: []string{"a"},
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "t",
+			Columns: []mysql.ColumnInfo{
+				{Name: "a", Type: "int", Nullable: true},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    &topology.Info{Type: topology.Standalone},
+	}
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("Algorithm = %q, want COPY", result.Classification.Algorithm)
+	}
+	if len(result.Warnings) == 0 {
+		t.Error("expected a nullable column warning, got none")
 	}
 }
 

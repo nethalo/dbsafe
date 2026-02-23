@@ -110,6 +110,7 @@ type ParsedSQL struct {
 	DDLOperations     []DDLOperation // for multi-op ALTER TABLE
 	TablespaceName    string         // for ALTER TABLESPACE
 	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
+	IndexColumns      []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names
 }
 
 var (
@@ -374,6 +375,12 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 
 	case *sqlparser.AddIndexDefinition:
 		result.IndexName = opt.IndexDefinition.Info.Name.String()
+		// Extract column names so the analyzer can inspect their nullability (needed for ADD PRIMARY KEY).
+		for _, col := range opt.IndexDefinition.Columns {
+			if !col.Column.IsEmpty() {
+				result.IndexColumns = append(result.IndexColumns, col.Column.String())
+			}
+		}
 
 	case *sqlparser.DropKey:
 		result.IndexName = opt.Name.String()

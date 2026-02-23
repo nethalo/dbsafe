@@ -269,6 +269,31 @@ func analyzeDDL(input Input, result *Result) {
 		)
 	}
 
+	// For ADD PRIMARY KEY: the matrix baseline is INPLACE+rebuild, but if any PK column is
+	// nullable in the live schema, MySQL must convert it to NOT NULL first, requiring COPY.
+	if input.Parsed.DDLOp == parser.AddPrimaryKey && len(input.Parsed.IndexColumns) > 0 {
+		for _, colName := range input.Parsed.IndexColumns {
+			for _, col := range input.Meta.Columns {
+				if strings.EqualFold(col.Name, colName) && col.Nullable {
+					result.Classification = DDLClassification{
+						Algorithm:     AlgoCopy,
+						Lock:          LockShared,
+						RebuildsTable: true,
+						Notes:         "Nullable PK column requires COPY: MySQL must implicitly convert the column from NULL to NOT NULL during the rebuild.",
+					}
+					result.Warnings = append(result.Warnings, fmt.Sprintf(
+						"Column '%s' is nullable: ADD PRIMARY KEY on a nullable column requires COPY algorithm (MySQL must enforce NOT NULL).",
+						colName,
+					))
+					break
+				}
+			}
+			if result.Classification.Algorithm == AlgoCopy {
+				break
+			}
+		}
+	}
+
 	// For ADD COLUMN with AUTO_INCREMENT: InnoDB requires the column to be a key,
 	// which forces a full table rebuild (COPY algorithm with SHARED lock).
 	if input.Parsed.DDLOp == parser.AddColumn && input.Parsed.HasAutoIncrement {
