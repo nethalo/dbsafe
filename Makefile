@@ -4,6 +4,13 @@ COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_DATE=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS=-ldflags "-X github.com/nethalo/dbsafe/cmd.Version=$(VERSION) -X github.com/nethalo/dbsafe/cmd.CommitSHA=$(COMMIT) -X github.com/nethalo/dbsafe/cmd.BuildDate=$(BUILD_DATE)"
 
+MYSQL_VERSION ?= 8.0
+ifeq ($(MYSQL_VERSION),8.4)
+  DEMO_COMPOSE := docker-compose.demo-84.yml
+else
+  DEMO_COMPOSE := docker-compose.demo.yml
+endif
+
 .PHONY: all build clean test lint install demo-up demo-down
 
 all: build
@@ -31,21 +38,23 @@ build-all:
 	GOOS=darwin  GOARCH=amd64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-amd64 .
 	GOOS=darwin  GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-arm64 .
 
-# Demo environment: MySQL 8.0 pre-loaded with ~1.3 GB of e-commerce data
+# Demo environment: MySQL pre-loaded with ~1.3 GB of e-commerce data
 # Showcases DANGEROUS risk levels, gh-ost/pt-osc commands, chunked DML, triggers, and FK display.
+# Usage: make demo-up                    (MySQL 8.0, default)
+#        make demo-up MYSQL_VERSION=8.4  (MySQL 8.4 LTS)
 demo-up: build
-	@echo "Starting dbsafe demo environment..."
-	@docker compose -f docker-compose.demo.yml up -d
+	@echo "Starting dbsafe demo environment (MySQL $(MYSQL_VERSION))..."
+	@docker compose -f $(DEMO_COMPOSE) up -d
 	@echo "Seeding ~2.56M rows of demo data (3-5 min on first run)..."
-	@until docker compose -f docker-compose.demo.yml exec -T mysql-demo \
+	@until docker compose -f $(DEMO_COMPOSE) exec -T mysql-demo \
 		mysql --protocol=tcp -h 127.0.0.1 -u dbsafe -pdbsafe_demo demo -e "SELECT 1" > /dev/null 2>&1; do \
-		if ! docker compose -f docker-compose.demo.yml ps --status running | grep -q mysql-demo; then \
+		if ! docker compose -f $(DEMO_COMPOSE) ps --status running | grep -q mysql-demo; then \
 			echo ""; echo "ERROR: MySQL container died. Check: docker logs dbsafe-mysql-demo-1"; exit 1; \
 		fi; \
 		printf "."; sleep 5; \
 	done
 	@echo ""
-	@echo "Demo environment ready!"
+	@echo "Demo environment ready! (MySQL $(MYSQL_VERSION))"
 	@echo ""
 	@echo "  export DBSAFE_PASSWORD=dbsafe_demo"
 	@echo "  CONN=\"-H 127.0.0.1 -P 23306 -u dbsafe -d demo\""
@@ -76,8 +85,8 @@ demo-up: build
 	@echo "    \"ALTER TABLE order_items MODIFY COLUMN unit_price DECIMAL(12,4)\""
 
 demo-down:
-	@echo "Stopping demo environment..."
-	@docker compose -f docker-compose.demo.yml down -v
+	@echo "Stopping demo environment (MySQL $(MYSQL_VERSION))..."
+	@docker compose -f $(DEMO_COMPOSE) down -v
 
 tidy:
 	go mod tidy

@@ -1,14 +1,25 @@
 # dbsafe Demo Environment
 
-A MySQL 8.0 instance pre-loaded with ~2.4M rows of realistic e-commerce data, designed to showcase every major dbsafe output: DANGEROUS risk levels, gh-ost/pt-osc commands, chunked DML scripts, trigger fire warnings, and FK displays.
+A MySQL instance pre-loaded with ~2.4M rows of realistic e-commerce data, designed to showcase every major dbsafe output: DANGEROUS risk levels, gh-ost/pt-osc commands, chunked DML scripts, trigger fire warnings, and FK displays.
 
 ## Start
 
 ```bash
-make demo-up
+make demo-up                    # MySQL 8.0 (default)
+make demo-up MYSQL_VERSION=8.4  # MySQL 8.4 LTS
 ```
 
-First run seeds ~2.56M rows and takes **~10–12 minutes on Apple Silicon, ~3–5 minutes on x86**. Subsequent `make demo-up` calls after a `demo-down` also reseed from scratch (tmpfs is ephemeral). You'll see dots while it waits, then the ready message.
+### MySQL 8.0 (default)
+
+Uses `tmpfs` for fast I/O and runs via Rosetta 2 on Apple Silicon. First run seeds ~2.56M rows and takes **~10–12 minutes on Apple Silicon, ~3–5 minutes on x86**. Subsequent `make demo-up` calls after a `demo-down` reseed from scratch (tmpfs is ephemeral).
+
+### MySQL 8.4 LTS
+
+Stores data on overlay2 instead of tmpfs — seeding takes **~15–20 minutes**. No `tmpfs` or `command:` override is used (both crash MySQL 8.4 under macOS Docker Desktop). Auth uses `mysql_native_password=ON` via a mounted config file.
+
+> **Note**: `mysql:8.4` publishes an ARM64 manifest, but Docker may use a cached amd64 layer if you've previously pulled it. Run `docker pull --platform linux/arm64 mysql:8.4` first to get the native image on Apple Silicon.
+
+You'll see dots while it waits for seeding to finish, then the ready message.
 
 ## Run dbsafe commands
 
@@ -53,11 +64,15 @@ CONN="-H 127.0.0.1 -P 23306 -u dbsafe -d demo"
 ## Access MySQL directly
 
 ```bash
-# As the dbsafe read-only user
+# MySQL 8.0 (default)
 docker compose -f docker-compose.demo.yml exec mysql-demo \
   mysql -u dbsafe -pdbsafe_demo demo
 
-# As root (full access)
+# MySQL 8.4
+docker compose -f docker-compose.demo-84.yml exec mysql-demo \
+  mysql -u dbsafe -pdbsafe_demo demo
+
+# As root (replace compose file as needed)
 docker compose -f docker-compose.demo.yml exec mysql-demo \
   mysql -u root -proot demo
 ```
@@ -85,10 +100,11 @@ WHERE TABLE_SCHEMA = 'demo' AND REFERENCED_TABLE_NAME IS NOT NULL;
 ## Stop
 
 ```bash
-make demo-down
+make demo-down                    # Stop MySQL 8.0
+make demo-down MYSQL_VERSION=8.4  # Stop MySQL 8.4
 ```
 
-Stops the container and deletes the tmpfs volume. Everything is gone. Next `make demo-up` starts completely fresh.
+Stops the container and removes volumes. Everything is gone. Next `make demo-up` starts completely fresh.
 
 ## Connection details
 

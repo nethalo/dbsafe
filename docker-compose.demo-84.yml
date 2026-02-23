@@ -1,0 +1,29 @@
+# Docker Compose demo environment for dbsafe — MySQL 8.4 LTS
+# Provides a MySQL 8.4 instance pre-loaded with ~1.3 GB of realistic e-commerce data.
+#
+# Differences from docker-compose.demo.yml (MySQL 8.0):
+#   - No tmpfs: MySQL 8.4 crashes with ioctl errors under macOS Docker Desktop (Lima VM)
+#   - No platform: MySQL 8.4 has native ARM64 images (~3x faster on Apple Silicon)
+#   - No command: override — triggers same ioctl crash via entrypoint code path
+#   - Uses config file mount for InnoDB tuning + mysql_native_password=ON
+#
+# Usage:
+#   make demo-up MYSQL_VERSION=8.4   # Start MySQL 8.4 (seeds ~10-20 min, uses overlay2)
+#   make demo-down MYSQL_VERSION=8.4 # Stop and remove
+
+services:
+  mysql-demo:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "23306:3306"
+    volumes:
+      - ./scripts/demo-seed.sql:/docker-entrypoint-initdb.d/demo-seed.sql
+      - ./scripts/demo-mysql84.cnf:/etc/mysql/conf.d/demo.cnf:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 40
+      start_period: 300s

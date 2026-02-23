@@ -1,0 +1,12 @@
+[mysqld]
+# Required: Go's mysql driver defaults to mysql_native_password auth
+mysql_native_password=ON
+
+# InnoDB tuning — mirrors the --command flags in docker-compose.demo.yml (MySQL 8.0)
+# These are safe for a throwaway demo container; not for production use.
+innodb_buffer_pool_size=256M
+innodb_flush_log_at_trx_commit=0
+innodb_doublewrite=OFF
+skip_log_bin
+innodb_io_capacity=2000
+innodb_io_capacity_max=4000
