@@ -80,8 +80,8 @@ var planCmd = &cobra.Command{
 			connCfg.Database = parsed.Database
 		}
 
-		// Require a database to be specified
-		if connCfg.Database == "" {
+		// Require a database to be specified (tablespace operations have no associated table/database)
+		if connCfg.Database == "" && parsed.DDLOp != parser.AlterTablespace {
 			return fmt.Errorf("database not specified: use -d flag or specify database in SQL (e.g., ALTER TABLE mydb.users ...)")
 		}
 
@@ -104,10 +104,15 @@ var planCmd = &cobra.Command{
 			return fmt.Errorf("topology detection failed: %w", err)
 		}
 
-		// Collect table metadata
-		meta, err := mysql.GetTableMetadata(conn, connCfg.Database, parsed.Table)
-		if err != nil {
-			return fmt.Errorf("metadata collection failed: %w", err)
+		// Collect table metadata (skip for tablespace operations — no table involved)
+		var meta *mysql.TableMetadata
+		if parsed.DDLOp == parser.AlterTablespace {
+			meta = &mysql.TableMetadata{}
+		} else {
+			meta, err = mysql.GetTableMetadata(conn, connCfg.Database, parsed.Table)
+			if err != nil {
+				return fmt.Errorf("metadata collection failed: %w", err)
+			}
 		}
 
 		// Get server version

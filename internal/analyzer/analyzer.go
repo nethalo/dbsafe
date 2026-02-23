@@ -222,15 +222,65 @@ func analyzeDDL(input Input, result *Result) {
 		if oldType != "" {
 			charset := findColumnCharset(input.Meta.Columns, input.Parsed.ColumnName)
 
-			// Priority 1: ENUM/SET append-at-end → INSTANT (metadata-only).
-			// Only applies when the new list is a strict superset with additions only at the end.
-			if cls, ok := classifyModifyColumnEnum(oldType, input.Parsed.NewColumnType); ok {
-				result.Classification = cls
-			} else if cls, ok := classifyModifyColumnVarchar(oldType, input.Parsed.NewColumnType, charset); ok {
-				// Priority 2: VARCHAR extension within same length-prefix tier → INPLACE, no rebuild.
-				result.Classification = cls
+			// Check for an explicit charset change: always requires COPY.
+			// (The COPY baseline from the matrix already applies; we add a specific warning.)
+			if input.Parsed.NewColumnCharset != "" && charset != "" &&
+				!strings.EqualFold(charset, input.Parsed.NewColumnCharset) {
+				result.Warnings = append(result.Warnings, fmt.Sprintf(
+					"Column '%s' charset change detected: %s → %s. COPY with SHARED lock required.",
+					input.Parsed.ColumnName, charset, input.Parsed.NewColumnCharset,
+				))
+			} else {
+				// No charset change (or charset is the same / not specified): try INPLACE optimizations.
+				// When the charset is the same but explicitly stated, strip the charset clause so
+				// classifyModifyColumnVarchar sees only the base type (e.g. "varchar(100)").
+				newTypeForClassify := input.Parsed.NewColumnType
+				if input.Parsed.NewColumnCharset != "" {
+					newTypeForClassify = strings.SplitN(strings.TrimSpace(newTypeForClassify), " ", 2)[0]
+				}
+
+				// Priority 1: ENUM/SET append-at-end → INSTANT (metadata-only).
+				if cls, ok := classifyModifyColumnEnum(oldType, newTypeForClassify); ok {
+					result.Classification = cls
+				} else if cls, ok := classifyModifyColumnVarchar(oldType, newTypeForClassify, charset); ok {
+					// Priority 2: VARCHAR extension within same length-prefix tier → INPLACE, no rebuild.
+					result.Classification = cls
+				}
 			}
 		}
+	}
+
+	// For ALTER TABLESPACE RENAME: warn if the server version is too old (introduced in 8.0.21).
+	if input.Parsed.DDLOp == parser.AlterTablespace {
+		vr := classifyVersion(v.Major, v.Minor, v.EffectivePatch())
+		if vr == V8_0_Early || (vr == V8_0_Instant && v.EffectivePatch() < 21) {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("ALTER TABLESPACE ... RENAME TO requires MySQL 8.0.21+. Your version (%s) will reject this statement with a syntax error.", v.String()),
+			)
+			result.Risk = RiskDangerous
+		}
+	}
+
+	// For TABLE ENCRYPTION: warn that keyring plugin must be configured.
+	// dbsafe cannot verify plugin presence from a read-only connection, so this is informational.
+	if input.Parsed.DDLOp == parser.TableEncryption {
+		result.Warnings = append(result.Warnings,
+			"Requires keyring plugin (keyring_file, keyring_vault, or component_keyring_*). Operation will fail if keyring is not configured.",
+		)
+	}
+
+	// For ADD COLUMN with AUTO_INCREMENT: InnoDB requires the column to be a key,
+	// which forces a full table rebuild (COPY algorithm with SHARED lock).
+	if input.Parsed.DDLOp == parser.AddColumn && input.Parsed.HasAutoIncrement {
+		result.Classification = DDLClassification{
+			Algorithm:     AlgoCopy,
+			Lock:          LockShared,
+			RebuildsTable: true,
+			Notes:         "ADD COLUMN with AUTO_INCREMENT requires a full table rebuild: InnoDB demands AUTO_INCREMENT columns be indexed (part of the primary key). INSTANT/INPLACE is not available.",
+		}
+		result.Warnings = append(result.Warnings,
+			"AUTO_INCREMENT column detected: cannot use INSTANT or INPLACE. InnoDB requires AUTO_INCREMENT columns to be part of an index, forcing a full table rebuild (COPY with SHARED lock).",
+		)
 	}
 
 	// For MODIFY COLUMN with FIRST/AFTER: column reorder forces a table rebuild.

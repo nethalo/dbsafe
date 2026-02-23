@@ -2,10 +2,19 @@ package parser
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
 	"vitess.io/vitess/go/vt/sqlparser"
+)
+
+// Pre-pass regexes for statements Vitess can't parse or loses info from.
+var (
+	// OPTIMIZE TABLE [NO_WRITE_TO_BINLOG|LOCAL] <tbl>
+	reOptimizeTable = regexp.MustCompile(`(?i)^OPTIMIZE\s+(?:NO_WRITE_TO_BINLOG\s+|LOCAL\s+)?TABLE\s+(\S+)`)
+	// ALTER TABLESPACE <name> RENAME TO <new_name>
+	reAlterTablespace = regexp.MustCompile(`(?i)^ALTER\s+TABLESPACE\s+(\S+)\s+RENAME\s+TO\s+(\S+)`)
 )
 
 // StatementType classifies the SQL statement.
@@ -51,6 +60,19 @@ const (
 	MultipleOps         DDLOperation = "MULTIPLE_OPS"
 	CreateTable         DDLOperation = "CREATE_TABLE"
 	OtherDDL            DDLOperation = "OTHER"
+
+	// Table option operations (metadata-only, INPLACE LOCK=NONE)
+	KeyBlockSize    DDLOperation = "KEY_BLOCK_SIZE"
+	StatsOption     DDLOperation = "STATS_OPTION"
+	TableEncryption DDLOperation = "TABLE_ENCRYPTION"
+
+	// Multi-op combined patterns
+	ChangeIndexType    DDLOperation = "CHANGE_INDEX_TYPE"    // DROP INDEX + ADD INDEX (same name)
+	ReplacePrimaryKey  DDLOperation = "REPLACE_PRIMARY_KEY"  // DROP PRIMARY KEY + ADD PRIMARY KEY
+
+	// Statement-level DDL operations (not ALTER TABLE sub-operations)
+	OptimizeTable   DDLOperation = "OPTIMIZE_TABLE"   // OPTIMIZE TABLE <tbl>
+	AlterTablespace DDLOperation = "ALTER_TABLESPACE" // ALTER TABLESPACE <name> RENAME TO <new>
 )
 
 // DMLOperation enumerates DML operations.
@@ -77,13 +99,17 @@ type ParsedSQL struct {
 	OldColumnName string         // for CHANGE COLUMN
 	NewColumnName string         // for CHANGE COLUMN
 	NewColumnType     string         // for CHANGE/MODIFY COLUMN: the new column type (e.g. "decimal(14,4)")
+	NewColumnCharset  string         // for MODIFY COLUMN: explicit CHARACTER SET clause if present (lowercase)
 	NewColumnNullable *bool          // for MODIFY COLUMN: nil=unspecified, *true=NULL, *false=NOT NULL
 	ColumnDef         string         // full column definition for ADD COLUMN
 	IsFirstAfter      bool           // ADD COLUMN/MODIFY COLUMN ... FIRST or AFTER
 	IndexName         string         // for ADD/DROP INDEX
 	HasNotNull        bool           // ADD COLUMN ... NOT NULL
 	HasDefault        bool           // ADD COLUMN ... DEFAULT
+	HasAutoIncrement  bool           // ADD COLUMN ... AUTO_INCREMENT
 	DDLOperations     []DDLOperation // for multi-op ALTER TABLE
+	TablespaceName    string         // for ALTER TABLESPACE
+	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
 }
 
 var (
@@ -99,10 +125,42 @@ func getParser() (*sqlparser.Parser, error) {
 	return globalParser, globalParserErr
 }
 
+// splitQualified splits a possibly-qualified name (db.table or table) into (db, name).
+func splitQualified(name string) (string, string) {
+	name = strings.Trim(name, "`")
+	if idx := strings.IndexByte(name, '.'); idx >= 0 {
+		return strings.Trim(name[:idx], "`"), strings.Trim(name[idx+1:], "`")
+	}
+	return "", name
+}
+
 // Parse parses a SQL statement and extracts information needed for analysis.
 func Parse(sql string) (*ParsedSQL, error) {
 	sql = strings.TrimSpace(sql)
 	sql = strings.TrimRight(sql, ";")
+
+	// Pre-pass: OPTIMIZE TABLE — Vitess parses this as OtherAdmin without preserving the table name.
+	if m := reOptimizeTable.FindStringSubmatch(sql); m != nil {
+		db, table := splitQualified(m[1])
+		return &ParsedSQL{
+			Type:     DDL,
+			RawSQL:   sql,
+			DDLOp:    OptimizeTable,
+			Database: db,
+			Table:    table,
+		}, nil
+	}
+
+	// Pre-pass: ALTER TABLESPACE ... RENAME TO — Vitess returns a parse error for this statement.
+	if m := reAlterTablespace.FindStringSubmatch(sql); m != nil {
+		return &ParsedSQL{
+			Type:              DDL,
+			RawSQL:            sql,
+			DDLOp:             AlterTablespace,
+			TablespaceName:    strings.Trim(m[1], "`"),
+			NewTablespaceName: strings.Trim(m[2], "`"),
+		}, nil
+	}
 
 	p, err := getParser()
 	if err != nil {
@@ -225,8 +283,22 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 		return
 	}
 
-	// If multiple operations, mark as such
+	// If multiple operations, check for well-known two-op patterns before falling back.
 	if len(alter.AlterOptions) > 1 {
+		// Pattern: exactly DROP INDEX + ADD INDEX on the same index name → index type change.
+		if len(alter.AlterOptions) == 2 {
+			if indexName, ok := detectDropAddIndexPattern(alter.AlterOptions); ok {
+				result.DDLOp = ChangeIndexType
+				result.IndexName = indexName
+				return
+			}
+			// Pattern: exactly DROP PRIMARY KEY + ADD PRIMARY KEY → primary key replacement.
+			if detectDropAddPKPattern(alter.AlterOptions) {
+				result.DDLOp = ReplacePrimaryKey
+				return
+			}
+		}
+
 		result.DDLOp = MultipleOps
 		for _, opt := range alter.AlterOptions {
 			result.DDLOperations = append(result.DDLOperations, classifySingleAlterOp(opt))
@@ -259,6 +331,11 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 			if opt.First || opt.After != nil {
 				result.IsFirstAfter = true
 			}
+
+			// Check for AUTO_INCREMENT
+			if col.Type.Options != nil && col.Type.Options.Autoincrement {
+				result.HasAutoIncrement = true
+			}
 		}
 
 	case *sqlparser.DropColumn:
@@ -271,6 +348,10 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 			typeBuf := sqlparser.NewTrackedBuffer(nil)
 			opt.NewColDefinition.Type.Format(typeBuf)
 			result.NewColumnType = strings.ToLower(typeBuf.String())
+			// Capture explicit CHARACTER SET clause (if any).
+			if opt.NewColDefinition.Type.Charset.Name != "" {
+				result.NewColumnCharset = strings.ToLower(opt.NewColDefinition.Type.Charset.Name)
+			}
 			// Detect explicit NULL/NOT NULL specification for nullability-change detection
 			if opt.NewColDefinition.Type.Options != nil {
 				result.NewColumnNullable = opt.NewColDefinition.Type.Options.Null
@@ -355,10 +436,59 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 				return ChangeCharset
 			case "AUTO_INCREMENT":
 				return ChangeAutoIncrement
+			case "KEY_BLOCK_SIZE":
+				return KeyBlockSize
+			case "STATS_PERSISTENT", "STATS_SAMPLE_PAGES", "STATS_AUTO_RECALC":
+				return StatsOption
+			case "ENCRYPTION":
+				return TableEncryption
 			}
 		}
 		return OtherDDL
 	default:
 		return OtherDDL
 	}
+}
+
+// detectDropAddIndexPattern checks whether two alter options form a DROP INDEX + ADD INDEX
+// on the same index name (an index type change). Returns the index name and true on match.
+func detectDropAddIndexPattern(opts []sqlparser.AlterOption) (string, bool) {
+	var dropName, addName string
+
+	for _, opt := range opts {
+		switch o := opt.(type) {
+		case *sqlparser.DropKey:
+			if o.Type != sqlparser.PrimaryKeyType && o.Type != sqlparser.ForeignKeyType {
+				dropName = o.Name.String()
+			}
+		case *sqlparser.AddIndexDefinition:
+			info := o.IndexDefinition.Info
+			if info.Type != sqlparser.IndexTypePrimary {
+				addName = info.Name.String()
+			}
+		}
+	}
+
+	if dropName != "" && addName != "" && strings.EqualFold(dropName, addName) {
+		return dropName, true
+	}
+	return "", false
+}
+
+// detectDropAddPKPattern checks whether two alter options form a DROP PRIMARY KEY + ADD PRIMARY KEY.
+func detectDropAddPKPattern(opts []sqlparser.AlterOption) bool {
+	hasDrop, hasAdd := false, false
+	for _, opt := range opts {
+		switch o := opt.(type) {
+		case *sqlparser.DropKey:
+			if o.Type == sqlparser.PrimaryKeyType {
+				hasDrop = true
+			}
+		case *sqlparser.AddIndexDefinition:
+			if o.IndexDefinition.Info.Type == sqlparser.IndexTypePrimary {
+				hasAdd = true
+			}
+		}
+	}
+	return hasDrop && hasAdd
 }

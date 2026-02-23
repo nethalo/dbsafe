@@ -359,6 +359,78 @@ var ddlMatrix = map[matrixKey]DDLClassification{
 	{parser.DropPartition, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Removes partition and its rows; other partitions are not rebuilt."},
 	{parser.DropPartition, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Removes partition and its rows; other partitions are not rebuilt."},
 	{parser.DropPartition, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE. Removes partition and its rows; other partitions are not rebuilt."},
+
+	// ═══════════════════════════════════════════════════
+	// KEY_BLOCK_SIZE (§6.2)
+	// InnoDB immediately rebuilds the table using the new page size.
+	// INPLACE with LOCK=NONE (concurrent DML allowed) but requires a full table rebuild.
+	// Equivalent in cost to OPTIMIZE TABLE.
+	// ═══════════════════════════════════════════════════
+	{parser.KeyBlockSize, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with full table rebuild — cost equivalent to OPTIMIZE TABLE. Concurrent DML allowed during rebuild."},
+	{parser.KeyBlockSize, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with full table rebuild — cost equivalent to OPTIMIZE TABLE. Concurrent DML allowed during rebuild."},
+	{parser.KeyBlockSize, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with full table rebuild — cost equivalent to OPTIMIZE TABLE. Concurrent DML allowed during rebuild."},
+	{parser.KeyBlockSize, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "INPLACE with full table rebuild — cost equivalent to OPTIMIZE TABLE. Concurrent DML allowed during rebuild."},
+
+	// ═══════════════════════════════════════════════════
+	// STATS_PERSISTENT / STATS_SAMPLE_PAGES / STATS_AUTO_RECALC (§6.3)
+	// InnoDB statistics options update metadata only (mysql.innodb_table_stats /
+	// information_schema). No row data or indexes are modified.
+	// ═══════════════════════════════════════════════════
+	{parser.StatsOption, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Updates InnoDB statistics configuration; no row data or indexes are modified."},
+	{parser.StatsOption, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Updates InnoDB statistics configuration; no row data or indexes are modified."},
+	{parser.StatsOption, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Updates InnoDB statistics configuration; no row data or indexes are modified."},
+	{parser.StatsOption, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Updates InnoDB statistics configuration; no row data or indexes are modified."},
+
+	// ═══════════════════════════════════════════════════
+	// TABLE ENCRYPTION (§7.2)
+	// Enabling/disabling InnoDB table encryption uses COPY algorithm with SHARED lock.
+	// The data is re-encrypted by rebuilding the entire table. Requires keyring plugin.
+	// ═══════════════════════════════════════════════════
+	{parser.TableEncryption, V8_0_Early}:   {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "COPY algorithm — full table rebuild. Reads allowed, writes blocked during re-encryption. Requires keyring plugin (keyring_file or keyring_encrypted_file)."},
+	{parser.TableEncryption, V8_0_Instant}: {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "COPY algorithm — full table rebuild. Reads allowed, writes blocked during re-encryption. Requires keyring plugin (keyring_file or keyring_encrypted_file)."},
+	{parser.TableEncryption, V8_0_Full}:    {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "COPY algorithm — full table rebuild. Reads allowed, writes blocked during re-encryption. Requires keyring plugin (keyring_file, keyring_vault, or component_keyring_*)."},
+	{parser.TableEncryption, V8_4_LTS}:     {Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true, Notes: "COPY algorithm — full table rebuild. Reads allowed, writes blocked during re-encryption. Requires keyring plugin (keyring_file, keyring_vault, or component_keyring_*)."},
+
+	// ═══════════════════════════════════════════════════
+	// CHANGE INDEX TYPE (§1.6) — DROP INDEX + ADD INDEX (same name)
+	// Changing only the USING clause (BTREE/HASH) on an existing index is metadata-only.
+	// InnoDB always stores secondary indexes as B-trees regardless of the USING hint,
+	// so this is INSTANT — only the data dictionary entry is updated.
+	// ═══════════════════════════════════════════════════
+	{parser.ChangeIndexType, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. INSTANT algorithm not available before 8.0.12. InnoDB always uses B-tree for secondary indexes; the USING clause is stored in the data dictionary only."},
+	{parser.ChangeIndexType, V8_0_Instant}: {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "INSTANT, metadata-only. InnoDB always uses B-tree for secondary indexes; the USING clause is stored in the data dictionary only."},
+	{parser.ChangeIndexType, V8_0_Full}:    {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "INSTANT, metadata-only. InnoDB always uses B-tree for secondary indexes; the USING clause is stored in the data dictionary only."},
+	{parser.ChangeIndexType, V8_4_LTS}:     {Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false, Notes: "INSTANT, metadata-only. InnoDB always uses B-tree for secondary indexes; the USING clause is stored in the data dictionary only."},
+
+	// ═══════════════════════════════════════════════════
+	// REPLACE PRIMARY KEY (§2.3) — DROP PRIMARY KEY + ADD PRIMARY KEY
+	// The combined DROP+ADD PK is handled as a single InnoDB operation: INPLACE, LOCK=NONE,
+	// but requires a table rebuild to reorganize the clustered index. Standalone DROP PK is COPY.
+	// ═══════════════════════════════════════════════════
+	{parser.ReplacePrimaryKey, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "Combined DROP PRIMARY KEY + ADD PRIMARY KEY: INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
+	{parser.ReplacePrimaryKey, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "Combined DROP PRIMARY KEY + ADD PRIMARY KEY: INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
+	{parser.ReplacePrimaryKey, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "Combined DROP PRIMARY KEY + ADD PRIMARY KEY: INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
+	{parser.ReplacePrimaryKey, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "Combined DROP PRIMARY KEY + ADD PRIMARY KEY: INPLACE with table rebuild. Concurrent DML allowed during rebuild."},
+
+	// ═══════════════════════════════════════════════════
+	// OPTIMIZE TABLE (§6.7)
+	// MySQL maps OPTIMIZE TABLE to ALTER TABLE ... FORCE for InnoDB tables.
+	// INPLACE algorithm with a full table rebuild; concurrent DML is allowed during the rebuild.
+	// ═══════════════════════════════════════════════════
+	{parser.OptimizeTable, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "Mapped to ALTER TABLE ... FORCE internally. INPLACE with full table rebuild. Reclaims fragmented space. Concurrent DML allowed during rebuild."},
+	{parser.OptimizeTable, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "Mapped to ALTER TABLE ... FORCE internally. INPLACE with full table rebuild. Reclaims fragmented space. Concurrent DML allowed during rebuild."},
+	{parser.OptimizeTable, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "Mapped to ALTER TABLE ... FORCE internally. INPLACE with full table rebuild. Reclaims fragmented space and resets TOTAL_ROW_VERSIONS counter."},
+	{parser.OptimizeTable, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true, Notes: "Mapped to ALTER TABLE ... FORCE internally. INPLACE with full table rebuild. Reclaims fragmented space and resets TOTAL_ROW_VERSIONS counter."},
+
+	// ═══════════════════════════════════════════════════
+	// ALTER TABLESPACE RENAME (§7.1)
+	// Metadata-only rename of a general tablespace. INPLACE, LOCK=NONE.
+	// Does not support the ALGORITHM clause explicitly; always uses INPLACE internally.
+	// ═══════════════════════════════════════════════════
+	{parser.AlterTablespace, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "⚠️ ALTER TABLESPACE ... RENAME TO was introduced in MySQL 8.0.21 and does not exist in 8.0.0-8.0.11. The server will reject this statement with a syntax error on these versions."},
+	{parser.AlterTablespace, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Requires MySQL 8.0.21+; statement is rejected on 8.0.12-8.0.20. Renames the tablespace entry in the data dictionary. Does not accept ALGORITHM= clause explicitly."},
+	{parser.AlterTablespace, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Renames the tablespace entry in the data dictionary. Does not accept ALGORITHM= clause explicitly."},
+	{parser.AlterTablespace, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only. Renames the tablespace entry in the data dictionary. Does not accept ALGORITHM= clause explicitly."},
 }
 
 // ClassifyDDL looks up the DDL operation in the matrix.

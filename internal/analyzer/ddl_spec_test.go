@@ -4,6 +4,7 @@ package analyzer
 // Tests are organized by spec section and reference the spec item number (e.g. "3.6").
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nethalo/dbsafe/internal/mysql"
@@ -504,6 +505,344 @@ func TestSpec_8_5_TruncatePartition(t *testing.T) {
 		if c.RebuildsTable {
 			t.Errorf("v%d.%d.%d: TruncatePartition RebuildsTable = true, want false", v.Major, v.Minor, v.Patch)
 		}
+	}
+}
+
+// =============================================================
+// Section 1 (new): Index Type Change via DROP+ADD — §1.6
+// =============================================================
+
+// 1.6 Index type change (DROP INDEX + ADD INDEX same name)
+// INSTANT from 8.0.12+; INPLACE on 8.0.0-8.0.11 (INSTANT algorithm didn't exist yet).
+// InnoDB always uses B-tree internally; the USING clause is stored in the data dictionary only.
+func TestSpec_1_6_ChangeIndexType_IsInstant(t *testing.T) {
+	// 8.0.12+: INSTANT
+	for _, v := range []mysql.ServerVersion{v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.ChangeIndexType, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInstant {
+			t.Errorf("v%d.%d.%d: ChangeIndexType Algorithm = %q, want INSTANT", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: ChangeIndexType Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: ChangeIndexType RebuildsTable = true, want false", v.Major, v.Minor, v.Patch)
+		}
+	}
+	// 8.0.0-8.0.11: INPLACE (INSTANT not available)
+	c := ClassifyDDL(parser.ChangeIndexType, v8_0_5.Major, v8_0_5.Minor, v8_0_5.Patch)
+	if c.Algorithm != AlgoInplace {
+		t.Errorf("v8.0.5: ChangeIndexType Algorithm = %q, want INPLACE (INSTANT not available before 8.0.12)", c.Algorithm)
+	}
+}
+
+// =============================================================
+// Section 2 (new): Primary Key Replacement — §2.3
+// =============================================================
+
+// 2.3 DROP PRIMARY KEY + ADD PRIMARY KEY combined — INPLACE, LOCK=NONE, rebuild=true
+func TestSpec_2_3_ReplacePrimaryKey_IsInplace(t *testing.T) {
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.ReplacePrimaryKey, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: ReplacePrimaryKey Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: ReplacePrimaryKey Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if !c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: ReplacePrimaryKey RebuildsTable = false, want true", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+// =============================================================
+// Section 3.1 (new): ADD COLUMN with AUTO_INCREMENT edge case
+// =============================================================
+
+// 3.1 ADD COLUMN with AUTO_INCREMENT — must override to COPY+SHARED
+func TestSpec_3_1_AddColumnAutoIncrement_IsCopy(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:             parser.DDL,
+			RawSQL:           "ALTER TABLE t ADD COLUMN seq_id BIGINT AUTO_INCREMENT",
+			Table:            "t",
+			DDLOp:            parser.AddColumn,
+			ColumnName:       "seq_id",
+			HasAutoIncrement: true,
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "t",
+			Columns: []mysql.ColumnInfo{
+				{Name: "id", Type: "int", Nullable: false, Position: 1},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("ADD COLUMN AUTO_INCREMENT: Algorithm = %q, want COPY", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockShared {
+		t.Errorf("ADD COLUMN AUTO_INCREMENT: Lock = %q, want SHARED", result.Classification.Lock)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Error("ADD COLUMN AUTO_INCREMENT: RebuildsTable = false, want true")
+	}
+	if len(result.Warnings) == 0 {
+		t.Error("ADD COLUMN AUTO_INCREMENT: expected warning about AUTO_INCREMENT forcing COPY")
+	}
+}
+
+// =============================================================
+// Section 6 (new): Table Option Operations — §6.2, §6.3
+// =============================================================
+
+// 6.2 KEY_BLOCK_SIZE — INPLACE, LOCK=NONE, rebuild=true (InnoDB rebuilds immediately)
+func TestSpec_6_2_KeyBlockSize_IsInplaceWithRebuild(t *testing.T) {
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.KeyBlockSize, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: KeyBlockSize Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: KeyBlockSize Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if !c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: KeyBlockSize RebuildsTable = false, want true (InnoDB rebuilds immediately)", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+// 6.3 STATS_PERSISTENT / STATS_SAMPLE_PAGES / STATS_AUTO_RECALC — INPLACE, LOCK=NONE (all versions)
+func TestSpec_6_3_StatsOption_IsInplace(t *testing.T) {
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.StatsOption, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: StatsOption Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: StatsOption Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: StatsOption RebuildsTable = true, want false", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+// =============================================================
+// Section 7 (new): Table Encryption — §7.2
+// =============================================================
+
+// 7.2 ENCRYPTION='Y'/'N' — COPY, LOCK=SHARED, rebuild=true + keyring warning
+func TestSpec_7_2_TableEncryption_IsCopy(t *testing.T) {
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.TableEncryption, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoCopy {
+			t.Errorf("v%d.%d.%d: TableEncryption Algorithm = %q, want COPY", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockShared {
+			t.Errorf("v%d.%d.%d: TableEncryption Lock = %q, want SHARED", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if !c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: TableEncryption RebuildsTable = false, want true", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+// 7.2 ENCRYPTION — keyring warning emitted by analyzer
+func TestSpec_7_2_TableEncryption_EmitsKeyringWarning(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:   parser.DDL,
+			RawSQL: "ALTER TABLE t ENCRYPTION='Y'",
+			Table:  "t",
+			DDLOp:  parser.TableEncryption,
+		},
+		Meta:    &mysql.TableMetadata{Database: "testdb", Table: "t"},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	hasKeyringWarn := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "keyring") {
+			hasKeyringWarn = true
+			break
+		}
+	}
+	if !hasKeyringWarn {
+		t.Errorf("ENCRYPTION: expected keyring plugin warning in Warnings, got %v", result.Warnings)
+	}
+}
+
+// =============================================================
+// Section 6.7: OPTIMIZE TABLE
+// =============================================================
+
+// §6.7 OPTIMIZE TABLE: INPLACE, RebuildsTable=true, LOCK=NONE
+func TestSpec_6_7_OptimizeTable_IsInplaceWithRebuild(t *testing.T) {
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.OptimizeTable, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: OptimizeTable Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: OptimizeTable Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if !c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: OptimizeTable RebuildsTable = false, want true", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+// Parser integration: OPTIMIZE TABLE produces OptimizeTable op with correct table name.
+func TestSpec_6_7_OptimizeTable_ParsesCorrectly(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:   parser.DDL,
+			RawSQL: "OPTIMIZE TABLE orders",
+			Table:  "orders",
+			DDLOp:  parser.OptimizeTable,
+		},
+		Meta:    &mysql.TableMetadata{Database: "testdb", Table: "orders"},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Errorf("RebuildsTable = false, want true")
+	}
+}
+
+// =============================================================
+// Section 7.1: ALTER TABLESPACE RENAME
+// =============================================================
+
+// §7.1 ALTER TABLESPACE RENAME: INPLACE, RebuildsTable=false, LOCK=NONE
+func TestSpec_7_1_AlterTablespaceRename_IsInplace(t *testing.T) {
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.AlterTablespace, v.Major, v.Minor, v.Patch)
+		if c.Algorithm != AlgoInplace {
+			t.Errorf("v%d.%d.%d: AlterTablespace Algorithm = %q, want INPLACE", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+		if c.Lock != LockNone {
+			t.Errorf("v%d.%d.%d: AlterTablespace Lock = %q, want NONE", v.Major, v.Minor, v.Patch, c.Lock)
+		}
+		if c.RebuildsTable {
+			t.Errorf("v%d.%d.%d: AlterTablespace RebuildsTable = true, want false", v.Major, v.Minor, v.Patch)
+		}
+	}
+}
+
+// Full analysis: AlterTablespace produces SAFE + DIRECT with empty metadata.
+func TestSpec_7_1_AlterTablespace_AnalyzeSafe(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:              parser.DDL,
+			RawSQL:            "ALTER TABLESPACE ts1 RENAME TO ts2",
+			DDLOp:             parser.AlterTablespace,
+			TablespaceName:    "ts1",
+			NewTablespaceName: "ts2",
+		},
+		Meta:    &mysql.TableMetadata{}, // tablespace ops have no table metadata
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if result.Risk != RiskSafe {
+		t.Errorf("Risk = %q, want SAFE", result.Risk)
+	}
+	if result.Method != ExecDirect {
+		t.Errorf("Method = %q, want DIRECT", result.Method)
+	}
+}
+
+// =============================================================
+// MODIFY COLUMN charset change (Issue #26)
+// =============================================================
+
+// Changing charset on a VARCHAR column always requires COPY.
+func TestSpec_ModifyColumn_CharsetChange_IsCopy(t *testing.T) {
+	utf8mb3 := "utf8mb3"
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:             parser.DDL,
+			RawSQL:           "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) CHARACTER SET utf8mb4",
+			Table:            "t",
+			DDLOp:            parser.ModifyColumn,
+			ColumnName:       "name",
+			NewColumnType:    "varchar(100) character set utf8mb4",
+			NewColumnCharset: "utf8mb4",
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "t",
+			Columns: []mysql.ColumnInfo{
+				{Name: "name", Type: "varchar(100)", CharacterSet: &utf8mb3},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("Algorithm = %q, want COPY (charset change)", result.Classification.Algorithm)
+	}
+	// Should have a charset-change warning
+	hasCharsetWarn := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "charset change") {
+			hasCharsetWarn = true
+			break
+		}
+	}
+	if !hasCharsetWarn {
+		t.Errorf("expected charset change warning, got %v", result.Warnings)
+	}
+}
+
+// Same charset explicitly specified: VARCHAR tier optimization still applies.
+// Using varchar(100)→varchar(200) in utf8mb4: both need 2-byte prefix (100×4=400 > 255).
+func TestSpec_ModifyColumn_SameCharsetExplicit_IsInplace(t *testing.T) {
+	utf8mb4 := "utf8mb4"
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:             parser.DDL,
+			RawSQL:           "ALTER TABLE t MODIFY COLUMN name VARCHAR(200) CHARACTER SET utf8mb4",
+			Table:            "t",
+			DDLOp:            parser.ModifyColumn,
+			ColumnName:       "name",
+			NewColumnType:    "varchar(200) character set utf8mb4",
+			NewColumnCharset: "utf8mb4",
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "t",
+			Columns: []mysql.ColumnInfo{
+				{Name: "name", Type: "varchar(100)", CharacterSet: &utf8mb4},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+	// varchar(100)→varchar(200) in utf8mb4: both need 2-byte prefix tier → INPLACE
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Algorithm = %q, want INPLACE (same charset, varchar tier unchanged)", result.Classification.Algorithm)
+	}
+	if result.Classification.RebuildsTable {
+		t.Errorf("RebuildsTable = true, want false for same-tier varchar extension")
 	}
 }
 

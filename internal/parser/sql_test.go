@@ -778,13 +778,94 @@ func TestParse_RenameTableQualified(t *testing.T) {
 // TestParse_OtherDDLTableOption exercises the TableOptions branch of
 // classifySingleAlterOp for a table option that maps to OtherDDL (unrecognized option).
 func TestParse_OtherDDLTableOption(t *testing.T) {
-	// KEY_BLOCK_SIZE is a valid table option that currently falls through to OtherDDL.
-	result, err := Parse("ALTER TABLE t KEY_BLOCK_SIZE = 8")
+	// An unrecognized table option falls through to OtherDDL.
+	result, err := Parse("ALTER TABLE t COMMENT='hello'")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.DDLOp != OtherDDL {
 		t.Errorf("DDLOp = %q, want %q", result.DDLOp, OtherDDL)
+	}
+}
+
+// TestParse_KeyBlockSize verifies that KEY_BLOCK_SIZE is classified correctly.
+func TestParse_KeyBlockSize(t *testing.T) {
+	result, err := Parse("ALTER TABLE t KEY_BLOCK_SIZE = 8")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != KeyBlockSize {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, KeyBlockSize)
+	}
+}
+
+// TestParse_StatsOption verifies that InnoDB statistics table options are classified correctly.
+func TestParse_StatsOption(t *testing.T) {
+	tests := []string{
+		"ALTER TABLE t STATS_PERSISTENT=1",
+		"ALTER TABLE t STATS_SAMPLE_PAGES=25",
+		"ALTER TABLE t STATS_AUTO_RECALC=1",
+	}
+	for _, sql := range tests {
+		result, err := Parse(sql)
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", sql, err)
+		}
+		if result.DDLOp != StatsOption {
+			t.Errorf("%q: DDLOp = %q, want %q", sql, result.DDLOp, StatsOption)
+		}
+	}
+}
+
+// TestParse_TableEncryption verifies that ENCRYPTION table option is classified correctly.
+func TestParse_TableEncryption(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ENCRYPTION='Y'")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != TableEncryption {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, TableEncryption)
+	}
+}
+
+// TestParse_AddColumnAutoIncrement verifies that AUTO_INCREMENT is detected in ADD COLUMN.
+func TestParse_AddColumnAutoIncrement(t *testing.T) {
+	result, err := Parse("ALTER TABLE t ADD COLUMN id BIGINT AUTO_INCREMENT PRIMARY KEY")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddColumn {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddColumn)
+	}
+	if !result.HasAutoIncrement {
+		t.Errorf("HasAutoIncrement = false, want true")
+	}
+}
+
+// TestParse_ChangeIndexType verifies that DROP INDEX + ADD INDEX on the same name
+// is detected as ChangeIndexType.
+func TestParse_ChangeIndexType(t *testing.T) {
+	result, err := Parse("ALTER TABLE t DROP INDEX idx_email, ADD INDEX idx_email (email)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ChangeIndexType {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ChangeIndexType)
+	}
+	if result.IndexName != "idx_email" {
+		t.Errorf("IndexName = %q, want %q", result.IndexName, "idx_email")
+	}
+}
+
+// TestParse_ReplacePrimaryKey verifies that DROP PRIMARY KEY + ADD PRIMARY KEY
+// is detected as ReplacePrimaryKey.
+func TestParse_ReplacePrimaryKey(t *testing.T) {
+	result, err := Parse("ALTER TABLE t DROP PRIMARY KEY, ADD PRIMARY KEY (col1, col2)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != ReplacePrimaryKey {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, ReplacePrimaryKey)
 	}
 }
 
@@ -1010,5 +1091,124 @@ func TestParse_ModifyColumn_NoNullSpec_NilNullable(t *testing.T) {
 	}
 	if result.NewColumnNullable != nil {
 		t.Errorf("NewColumnNullable = %v, want nil (nullability not specified)", result.NewColumnNullable)
+	}
+}
+
+func TestParse_ModifyColumn_Charset(t *testing.T) {
+	tests := []struct {
+		name              string
+		sql               string
+		wantCharset       string
+		wantColumnName    string
+	}{
+		{
+			name:           "explicit charset",
+			sql:            "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) CHARACTER SET utf8mb4",
+			wantCharset:    "utf8mb4",
+			wantColumnName: "name",
+		},
+		{
+			name:           "explicit charset with collate",
+			sql:            "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
+			wantCharset:    "utf8mb4",
+			wantColumnName: "name",
+		},
+		{
+			name:           "no charset clause",
+			sql:            "ALTER TABLE t MODIFY COLUMN name VARCHAR(100)",
+			wantCharset:    "",
+			wantColumnName: "name",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Parse(tt.sql)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.DDLOp != ModifyColumn {
+				t.Errorf("DDLOp = %q, want ModifyColumn", result.DDLOp)
+			}
+			if result.ColumnName != tt.wantColumnName {
+				t.Errorf("ColumnName = %q, want %q", result.ColumnName, tt.wantColumnName)
+			}
+			if result.NewColumnCharset != tt.wantCharset {
+				t.Errorf("NewColumnCharset = %q, want %q", result.NewColumnCharset, tt.wantCharset)
+			}
+		})
+	}
+}
+
+func TestParse_OptimizeTable(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		wantDB   string
+		wantTbl  string
+	}{
+		{
+			name:    "simple",
+			sql:     "OPTIMIZE TABLE orders",
+			wantTbl: "orders",
+		},
+		{
+			name:    "qualified name",
+			sql:     "OPTIMIZE TABLE mydb.orders",
+			wantDB:  "mydb",
+			wantTbl: "orders",
+		},
+		{
+			name:    "NO_WRITE_TO_BINLOG variant",
+			sql:     "OPTIMIZE NO_WRITE_TO_BINLOG TABLE orders",
+			wantTbl: "orders",
+		},
+		{
+			name:    "LOCAL variant",
+			sql:     "OPTIMIZE LOCAL TABLE orders",
+			wantTbl: "orders",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Parse(tt.sql)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.Type != DDL {
+				t.Errorf("Type = %q, want DDL", result.Type)
+			}
+			if result.DDLOp != OptimizeTable {
+				t.Errorf("DDLOp = %q, want OptimizeTable", result.DDLOp)
+			}
+			if result.Table != tt.wantTbl {
+				t.Errorf("Table = %q, want %q", result.Table, tt.wantTbl)
+			}
+			if result.Database != tt.wantDB {
+				t.Errorf("Database = %q, want %q", result.Database, tt.wantDB)
+			}
+		})
+	}
+}
+
+func TestParse_AlterTablespace(t *testing.T) {
+	result, err := Parse("ALTER TABLESPACE ts1 RENAME TO ts2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Type != DDL {
+		t.Errorf("Type = %q, want DDL", result.Type)
+	}
+	if result.DDLOp != AlterTablespace {
+		t.Errorf("DDLOp = %q, want AlterTablespace", result.DDLOp)
+	}
+	if result.TablespaceName != "ts1" {
+		t.Errorf("TablespaceName = %q, want ts1", result.TablespaceName)
+	}
+	if result.NewTablespaceName != "ts2" {
+		t.Errorf("NewTablespaceName = %q, want ts2", result.NewTablespaceName)
+	}
+	// Tablespace operations have no table name
+	if result.Table != "" {
+		t.Errorf("Table = %q, want empty", result.Table)
 	}
 }
