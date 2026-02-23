@@ -498,6 +498,64 @@ func TestRegression_FullPipeline(t *testing.T) {
 			wantRisk:       RiskDangerous,
 			wantWarningSubstr: []string{"already exists"},
 		},
+		{
+			// OPTIMIZE TABLE is a statement-level DDL that reorganizes the table and updates
+			// index statistics. The matrix classifies it as INPLACE with a table rebuild.
+			name:           "27. OPTIMIZE TABLE → INPLACE with rebuild, SAFE DIRECT",
+			sql:            "OPTIMIZE TABLE orders",
+			version:        v8_0_35,
+			topoType:       topology.Standalone,
+			tableSizeBytes: small,
+			wantRisk:       RiskSafe,
+			wantMethod:     ExecDirect,
+			wantAlgo:       AlgoInplace,
+			wantDDLOp:      parser.OptimizeTable,
+		},
+		{
+			// ALTER TABLESPACE RENAME is a metadata-only operation (INPLACE, no table rebuild).
+			// v8_0_35 (> 8.0.21) → no version-too-old warning fires.
+			name:           "28. ALTER TABLESPACE RENAME → INPLACE SAFE DIRECT",
+			sql:            "ALTER TABLESPACE ts1 RENAME TO ts2",
+			version:        v8_0_35,
+			topoType:       topology.Standalone,
+			tableSizeBytes: 0, // no table involved
+			wantRisk:       RiskSafe,
+			wantMethod:     ExecDirect,
+			wantAlgo:       AlgoInplace,
+			wantDDLOp:      parser.AlterTablespace,
+		},
+		{
+			// MODIFY COLUMN with an explicit charset change (utf8mb3 → utf8mb4):
+			// the charset guard fires and keeps the COPY baseline, adding a specific warning.
+			name: "29. MODIFY COLUMN charset change utf8mb3→utf8mb4 → COPY + charset warning",
+			sql:  "ALTER TABLE orders MODIFY COLUMN existing_col VARCHAR(100) CHARACTER SET utf8mb4",
+			version:        v8_0_35,
+			topoType:       topology.Standalone,
+			tableSizeBytes: small,
+			metaSetup: func(m *mysql.TableMetadata) {
+				cs := "utf8mb3"
+				m.Columns[1].CharacterSet = &cs // existing_col gets old charset
+			},
+			wantAlgo:          AlgoCopy,
+			wantDDLOp:         parser.ModifyColumn,
+			wantWarningSubstr: []string{"charset change"},
+		},
+		{
+			// MODIFY COLUMN with same charset (utf8mb4) and VARCHAR tier unchanged:
+			// 100×4=400 bytes and 200×4=800 bytes are both in the 2-byte prefix tier (>255),
+			// so classifyModifyColumnVarchar returns INPLACE.
+			name: "30. MODIFY COLUMN same charset VARCHAR expansion → INPLACE",
+			sql:  "ALTER TABLE orders MODIFY COLUMN existing_col VARCHAR(200) CHARACTER SET utf8mb4",
+			version:        v8_0_35,
+			topoType:       topology.Standalone,
+			tableSizeBytes: small,
+			metaSetup: func(m *mysql.TableMetadata) {
+				cs := "utf8mb4"
+				m.Columns[1].CharacterSet = &cs
+			},
+			wantAlgo:  AlgoInplace,
+			wantDDLOp: parser.ModifyColumn,
+		},
 	}
 
 	for _, tc := range cases {
