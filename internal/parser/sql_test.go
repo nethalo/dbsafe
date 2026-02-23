@@ -766,3 +766,55 @@ func TestParse_BacktickIdentifiers(t *testing.T) {
 		t.Errorf("ColumnName = %q, want %q", result.ColumnName, "new_col")
 	}
 }
+
+func TestParse_ChangeColumn_ExtractsNewColumnType(t *testing.T) {
+	tests := []struct {
+		name          string
+		sql           string
+		oldColumnName string
+		newColumnName string
+		newColumnType string
+	}{
+		{
+			name:          "rename with type change",
+			sql:           "ALTER TABLE orders CHANGE COLUMN total_amount amount DECIMAL(14,4)",
+			oldColumnName: "total_amount",
+			newColumnName: "amount",
+			newColumnType: "decimal(14,4)",
+		},
+		{
+			name:          "rename only same type",
+			sql:           "ALTER TABLE users CHANGE COLUMN fname first_name VARCHAR(100)",
+			oldColumnName: "fname",
+			newColumnName: "first_name",
+			newColumnType: "varchar(100)",
+		},
+		{
+			name:          "same name type change",
+			sql:           "ALTER TABLE t CHANGE COLUMN col col BIGINT",
+			oldColumnName: "col",
+			newColumnName: "col",
+			newColumnType: "bigint",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Parse(tt.sql)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.DDLOp != ChangeColumn {
+				t.Errorf("DDLOp = %q, want %q", result.DDLOp, ChangeColumn)
+			}
+			if result.OldColumnName != tt.oldColumnName {
+				t.Errorf("OldColumnName = %q, want %q", result.OldColumnName, tt.oldColumnName)
+			}
+			if result.NewColumnName != tt.newColumnName {
+				t.Errorf("NewColumnName = %q, want %q", result.NewColumnName, tt.newColumnName)
+			}
+			if result.NewColumnType != tt.newColumnType {
+				t.Errorf("NewColumnType = %q, want %q", result.NewColumnType, tt.newColumnType)
+			}
+		})
+	}
+}

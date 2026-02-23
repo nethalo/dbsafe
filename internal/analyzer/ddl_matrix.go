@@ -140,12 +140,12 @@ var ddlMatrix = map[matrixKey]DDLClassification{
 		Notes: "INPLACE if only renaming. If data type changes, falls back to COPY.",
 	},
 	{parser.ChangeColumn, V8_0_Full}: {
-		Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false,
-		Notes: "INSTANT for rename-only (8.0.29+). If data type changes, falls back to COPY.",
+		Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false,
+		Notes: "INPLACE (metadata-only) for rename with same type. If data type changes, requires COPY with SHARED lock.",
 	},
 	{parser.ChangeColumn, V8_4_LTS}: {
-		Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false,
-		Notes: "INSTANT for rename-only. If data type changes, falls back to COPY.",
+		Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false,
+		Notes: "INPLACE (metadata-only) for rename with same type. If data type changes, requires COPY with SHARED lock.",
 	},
 
 	// ═══════════════════════════════════════════════════

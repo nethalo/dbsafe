@@ -1242,6 +1242,85 @@ func TestColumnValidation_ChangeColumn_SameNameAllowed(t *testing.T) {
 	}
 }
 
+func TestClassifyDDL_ChangeColumn_NeverInstant(t *testing.T) {
+	// INSTANT is never valid for CHANGE COLUMN in any MySQL version.
+	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
+		c := ClassifyDDL(parser.ChangeColumn, v.Major, v.Minor, v.Patch)
+		if c.Algorithm == AlgoInstant {
+			t.Errorf("v%d.%d.%d: ChangeColumn should never be INSTANT, got %s", v.Major, v.Minor, v.Patch, c.Algorithm)
+		}
+	}
+}
+
+func TestChangeColumn_TypeChange_RequiresCopy(t *testing.T) {
+	// When a type change is detected, classification must upgrade to COPY.
+	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.OldColumnName = "total_amount"
+	input.Parsed.NewColumnName = "amount"
+	input.Parsed.NewColumnType = "decimal(14,4)" // different from existing
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "total_amount", Type: "decimal(12,2)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("Expected COPY for type change, got %s", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockShared {
+		t.Errorf("Expected SHARED lock for type change, got %s", result.Classification.Lock)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Error("Expected RebuildsTable=true for type change")
+	}
+	if !containsWarning(result.Warnings, "type change detected") {
+		t.Errorf("Expected type-change warning, got: %v", result.Warnings)
+	}
+}
+
+func TestChangeColumn_RenameOnly_UsesInplace(t *testing.T) {
+	// Rename with same type stays INPLACE (no COPY needed).
+	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.OldColumnName = "existing_col"
+	input.Parsed.NewColumnName = "renamed_col"
+	input.Parsed.NewColumnType = "decimal(12,2)" // same type as in metadata
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "decimal(12,2)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Expected INPLACE for rename-only, got %s", result.Classification.Algorithm)
+	}
+	if containsWarning(result.Warnings, "type change detected") {
+		t.Errorf("Should not warn about type change for rename-only, got: %v", result.Warnings)
+	}
+}
+
+func TestChangeColumn_SameName_TypeChange_RequiresCopy(t *testing.T) {
+	// CHANGE COLUMN keeping same name but changing type still requires COPY.
+	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+	input.Parsed.OldColumnName = "existing_col"
+	input.Parsed.NewColumnName = "existing_col" // same name
+	input.Parsed.NewColumnType = "varchar(255)"  // different from varchar(100)
+	input.Meta.Columns = []mysql.ColumnInfo{
+		{Name: "id", Type: "int", Position: 1},
+		{Name: "existing_col", Type: "varchar(100)", Position: 2},
+	}
+
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("Expected COPY for type change (same name), got %s", result.Classification.Algorithm)
+	}
+	if !containsWarning(result.Warnings, "type change detected") {
+		t.Errorf("Expected type-change warning, got: %v", result.Warnings)
+	}
+}
+
 func TestAnalyzeDDL_UnparsableOperation(t *testing.T) {
 	// Test that OtherDDL operations generate a syntax warning
 	input := ddlInput(parser.OtherDDL, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 100*1024*1024, topology.Standalone)

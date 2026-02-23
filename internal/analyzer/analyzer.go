@@ -189,6 +189,25 @@ func analyzeDDL(input Input, result *Result) {
 	v := input.Version
 	result.Classification = ClassifyDDLWithContext(input.Parsed, v.Major, v.Minor, v.EffectivePatch())
 
+	// For CHANGE COLUMN: check if the data type is actually changing.
+	// The matrix baseline assumes rename-only (INPLACE). If the type changes, COPY is required.
+	if input.Parsed.DDLOp == parser.ChangeColumn && input.Parsed.NewColumnType != "" {
+		if oldType := findColumnType(input.Meta.Columns, input.Parsed.OldColumnName); oldType != "" {
+			if !strings.EqualFold(strings.ReplaceAll(oldType, " ", ""), strings.ReplaceAll(input.Parsed.NewColumnType, " ", "")) {
+				result.Classification = DDLClassification{
+					Algorithm:     AlgoCopy,
+					Lock:          LockShared,
+					RebuildsTable: true,
+					Notes:         "Data type change requires COPY algorithm with SHARED lock. Reads allowed, writes blocked during rebuild.",
+				}
+				result.Warnings = append(result.Warnings, fmt.Sprintf(
+					"Column '%s' type change detected: %s → %s. COPY algorithm required.",
+					input.Parsed.OldColumnName, oldType, input.Parsed.NewColumnType,
+				))
+			}
+		}
+	}
+
 	// Determine risk and method based on algorithm
 	// Note: Column validation may have already set Risk to RiskDangerous, which we preserve
 	switch result.Classification.Algorithm {
@@ -385,6 +404,16 @@ func estimateAffectedRows(input Input) int64 {
 	// If no estimate provided and has WHERE, return 0
 	// (caller should provide EXPLAIN estimate for accurate results)
 	return 0
+}
+
+// findColumnType returns the type string for a column by name, or empty if not found.
+func findColumnType(columns []mysql.ColumnInfo, name string) string {
+	for _, col := range columns {
+		if strings.EqualFold(col.Name, name) {
+			return strings.ToLower(col.Type)
+		}
+	}
+	return ""
 }
 
 func validateColumnOperation(input Input, result *Result) {
