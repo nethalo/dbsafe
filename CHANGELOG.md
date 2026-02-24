@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-02-24
+
+### Fixed
+- pt-online-schema-change generated command had empty `D=` in the DSN when the database was passed via `-d` flag instead of being embedded in the SQL; now correctly populated
+
 ## [0.3.4] - 2026-02-23
 
 ### Added
