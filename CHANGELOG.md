@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-02-24
+
+### Fixed
+- `CHANGE COLUMN` / `MODIFY COLUMN` rename-only operations incorrectly reported `COPY` when `NOT NULL`, `DEFAULT`, or other column-level qualifiers were present in the column definition (false positive type-change detection). Now correctly reports `INPLACE`. Root cause: Vitess `ColumnType.Format()` includes column options in its output; the parser now strips these via `baseColumnTypeString()` so `NewColumnType` matches `INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE` format for accurate comparison (#39)
+
 ## [0.3.5] - 2026-02-24
 
 ### Fixed
