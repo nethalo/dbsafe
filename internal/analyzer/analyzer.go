@@ -238,17 +238,12 @@ func analyzeDDL(input Input, result *Result) {
 				))
 			} else {
 				// No charset change (or charset is the same / not specified): try INPLACE optimizations.
-				// When the charset is the same but explicitly stated, strip the charset clause so
-				// classifyModifyColumnVarchar sees only the base type (e.g. "varchar(100)").
-				newTypeForClassify := input.Parsed.NewColumnType
-				if input.Parsed.NewColumnCharset != "" {
-					newTypeForClassify = strings.SplitN(strings.TrimSpace(newTypeForClassify), " ", 2)[0]
-				}
+				// NewColumnType is already the base data type (no NULL/DEFAULT options).
 
 				// Priority 1: ENUM/SET append-at-end → INSTANT (metadata-only).
-				if cls, ok := classifyModifyColumnEnum(oldType, newTypeForClassify); ok {
+				if cls, ok := classifyModifyColumnEnum(oldType, input.Parsed.NewColumnType); ok {
 					result.Classification = cls
-				} else if cls, ok := classifyModifyColumnVarchar(oldType, newTypeForClassify, charset); ok {
+				} else if cls, ok := classifyModifyColumnVarchar(oldType, input.Parsed.NewColumnType, charset); ok {
 					// Priority 2: VARCHAR extension within same length-prefix tier → INPLACE, no rebuild.
 					result.Classification = cls
 				}
@@ -391,7 +386,7 @@ func analyzeDDL(input Input, result *Result) {
 	if input.Parsed.DDLOp == parser.ModifyColumn && input.Parsed.IsFirstAfter {
 		oldType := findColumnType(input.Meta.Columns, input.Parsed.ColumnName)
 		if oldType != "" {
-			newBase := strings.ToLower(strings.SplitN(strings.TrimSpace(input.Parsed.NewColumnType), " ", 2)[0])
+			newBase := strings.ToLower(strings.TrimSpace(input.Parsed.NewColumnType))
 			if strings.EqualFold(strings.ReplaceAll(oldType, " ", ""), strings.ReplaceAll(newBase, " ", "")) {
 				switch {
 				case input.Parsed.IsGeneratedStored:
@@ -431,7 +426,7 @@ func analyzeDDL(input Input, result *Result) {
 	if input.Parsed.DDLOp == parser.ModifyColumn && input.Parsed.NewColumnNullable != nil && input.Parsed.NewColumnType != "" {
 		oldType := findColumnType(input.Meta.Columns, input.Parsed.ColumnName)
 		if oldType != "" {
-			newBase := strings.ToLower(strings.SplitN(strings.TrimSpace(input.Parsed.NewColumnType), " ", 2)[0])
+			newBase := strings.ToLower(strings.TrimSpace(input.Parsed.NewColumnType))
 			sameBaseType := strings.EqualFold(strings.ReplaceAll(oldType, " ", ""), strings.ReplaceAll(newBase, " ", ""))
 			if sameBaseType {
 				for _, col := range input.Meta.Columns {
@@ -890,25 +885,16 @@ func parseEnumMembers(typeStr string) ([]string, bool) {
 
 // classifyModifyColumnVarchar checks if a MODIFY COLUMN VARCHAR change qualifies for INPLACE.
 // Returns the classification and true if INPLACE is possible, (zero, false) otherwise.
+// newType must be the base data type only (no NULL/DEFAULT options) — see baseColumnTypeString.
 func classifyModifyColumnVarchar(oldType, newType, charset string) (DDLClassification, bool) {
-	// Strip the base type portion (everything before the first space, to ignore charset clauses in newType)
-	// but also check if the new type is changing the charset.
-	newBase := strings.SplitN(strings.TrimSpace(newType), " ", 2)[0]
-
 	oldN, oldOK := extractVarcharLength(oldType)
-	newN, newOK := extractVarcharLength(newBase)
+	newN, newOK := extractVarcharLength(newType)
 	if !oldOK || !newOK {
 		return DDLClassification{}, false
 	}
 
 	// Only expansions are INPLACE; shrinking always requires COPY.
 	if newN < oldN {
-		return DDLClassification{}, false
-	}
-
-	// If the new type includes extra clauses (e.g. "character set utf8mb4"), bail out — charset
-	// changes require COPY and we can't determine the new charset accurately here.
-	if len(strings.SplitN(strings.TrimSpace(newType), " ", 2)) > 1 {
 		return DDLClassification{}, false
 	}
 

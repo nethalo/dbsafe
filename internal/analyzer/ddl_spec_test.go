@@ -944,7 +944,7 @@ func TestSpec_4_6_ModifyVirtualColumnReorder_IsInplaceNoRebuild(t *testing.T) {
 			Table:             "gen_col_test",
 			DDLOp:             parser.ModifyColumn,
 			ColumnName:        "total_virtual",
-			NewColumnType:     "decimal(12,2) as (price * quantity) virtual",
+			NewColumnType:     "decimal(12,2)",
 			IsFirstAfter:      true,
 			IsGeneratedColumn: true,
 			IsGeneratedStored: false,
@@ -1227,7 +1227,7 @@ func TestSpec_ModifyColumn_SameCharsetExplicit_IsInplace(t *testing.T) {
 			Table:            "t",
 			DDLOp:            parser.ModifyColumn,
 			ColumnName:       "name",
-			NewColumnType:    "varchar(200) character set utf8mb4",
+			NewColumnType:    "varchar(200)",
 			NewColumnCharset: "utf8mb4",
 		},
 		Meta: &mysql.TableMetadata{

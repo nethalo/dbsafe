@@ -1399,6 +1399,58 @@ func TestChangeColumn_SameName_TypeChange_RequiresCopy(t *testing.T) {
 	}
 }
 
+func TestChangeColumn_RenameOnly_BaseTypeOnly_NoFalsePositive(t *testing.T) {
+	// Regression test: CHANGE COLUMN with NOT NULL DEFAULT qualifiers must not be
+	// treated as a type change. The parser strips Options so NewColumnType is just
+	// the base type (e.g. "varchar(20)"), matching INFORMATION_SCHEMA.COLUMN_TYPE.
+	tests := []struct {
+		name          string
+		oldType       string // INFORMATION_SCHEMA.COLUMN_TYPE
+		newColumnType string // what the parser produces (base type only)
+		wantAlgo      Algorithm
+	}{
+		{
+			name:          "varchar same type — parser strips NOT NULL DEFAULT",
+			oldType:       "varchar(20)",
+			newColumnType: "varchar(20)", // was: "varchar(20) not null default 'pending'"
+			wantAlgo:      AlgoInplace,
+		},
+		{
+			name:          "decimal same type — parser strips NOT NULL DEFAULT",
+			oldType:       "decimal(12,2)",
+			newColumnType: "decimal(12,2)", // was: "decimal(12,2) not null default 0.00"
+			wantAlgo:      AlgoInplace,
+		},
+		{
+			name:          "int unsigned same type — base type includes unsigned modifier",
+			oldType:       "int unsigned",
+			newColumnType: "int unsigned",
+			wantAlgo:      AlgoInplace,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
+			input.Parsed.OldColumnName = "col"
+			input.Parsed.NewColumnName = "new_col"
+			input.Parsed.NewColumnType = tt.newColumnType
+			input.Meta.Columns = []mysql.ColumnInfo{
+				{Name: "col", Type: tt.oldType, Position: 1},
+			}
+
+			result := Analyze(input)
+
+			if result.Classification.Algorithm != tt.wantAlgo {
+				t.Errorf("Algorithm = %s, want %s", result.Classification.Algorithm, tt.wantAlgo)
+			}
+			if containsWarning(result.Warnings, "type change detected") {
+				t.Errorf("Should not warn about type change for rename-only, got: %v", result.Warnings)
+			}
+		})
+	}
+}
+
 // =============================================================
 // MODIFY COLUMN VARCHAR INPLACE detection (issue #19)
 // =============================================================

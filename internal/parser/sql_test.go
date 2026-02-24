@@ -1039,6 +1039,23 @@ func TestParse_ChangeColumn_ExtractsNewColumnType(t *testing.T) {
 			newColumnName: "col",
 			newColumnType: "bigint",
 		},
+		{
+			// Regression: NOT NULL DEFAULT must NOT be included in NewColumnType.
+			// The analyzer compares against INFORMATION_SCHEMA.COLUMN_TYPE which has
+			// only the base type (e.g. "varchar(20)"), so options must be stripped.
+			name:          "rename only with NOT NULL DEFAULT options",
+			sql:           "ALTER TABLE orders CHANGE COLUMN status order_status VARCHAR(20) NOT NULL DEFAULT 'pending'",
+			oldColumnName: "status",
+			newColumnName: "order_status",
+			newColumnType: "varchar(20)",
+		},
+		{
+			name:          "rename only with UNSIGNED NOT NULL",
+			sql:           "ALTER TABLE t CHANGE COLUMN qty amount INT UNSIGNED NOT NULL DEFAULT 0",
+			oldColumnName: "qty",
+			newColumnName: "amount",
+			newColumnType: "int unsigned",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

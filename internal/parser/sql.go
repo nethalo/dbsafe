@@ -365,9 +365,9 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 		result.ColumnName = opt.NewColDefinition.Name.String()
 		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
 		if opt.NewColDefinition.Type != nil {
-			typeBuf := sqlparser.NewTrackedBuffer(nil)
-			opt.NewColDefinition.Type.Format(typeBuf)
-			result.NewColumnType = strings.ToLower(typeBuf.String())
+			// Extract only the base data type (without NULL/DEFAULT/etc.) to match
+			// INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE for accurate comparison.
+			result.NewColumnType = baseColumnTypeString(opt.NewColDefinition.Type)
 			// Capture explicit CHARACTER SET clause (if any).
 			if opt.NewColDefinition.Type.Charset.Name != "" {
 				result.NewColumnCharset = strings.ToLower(opt.NewColDefinition.Type.Charset.Name)
@@ -395,9 +395,9 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 		result.NewColumnName = opt.NewColDefinition.Name.String()
 		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
 		if opt.NewColDefinition.Type != nil {
-			typeBuf := sqlparser.NewTrackedBuffer(nil)
-			opt.NewColDefinition.Type.Format(typeBuf)
-			result.NewColumnType = strings.ToLower(typeBuf.String())
+			// Extract only the base data type (without NULL/DEFAULT/etc.) to match
+			// INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE for accurate comparison.
+			result.NewColumnType = baseColumnTypeString(opt.NewColDefinition.Type)
 		}
 
 	case *sqlparser.AddIndexDefinition:
@@ -536,4 +536,29 @@ func detectDropAddPKPattern(opts []sqlparser.AlterOption) bool {
 		}
 	}
 	return hasDrop && hasAdd
+}
+
+// baseColumnTypeString returns only the data type portion of a Vitess ColumnType —
+// type keyword + length/scale + UNSIGNED/ZEROFILL + enum values — without column-level
+// options (NULL / NOT NULL, DEFAULT, AUTO_INCREMENT, COLLATE, etc.).
+//
+// This matches the format of INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE, enabling accurate
+// type comparisons in the analyzer (e.g. detecting a true type change vs a rename-only).
+func baseColumnTypeString(ct *sqlparser.ColumnType) string {
+	if ct == nil {
+		return ""
+	}
+	baseCT := &sqlparser.ColumnType{
+		Type:       ct.Type,
+		Length:     ct.Length,
+		Scale:      ct.Scale,
+		Unsigned:   ct.Unsigned,
+		Zerofill:   ct.Zerofill,
+		EnumValues: ct.EnumValues,
+		// Charset omitted: captured separately in NewColumnCharset.
+		// Options omitted: NULL/NOT NULL, DEFAULT, AUTO_INCREMENT, etc.
+	}
+	typeBuf := sqlparser.NewTrackedBuffer(nil)
+	baseCT.Format(typeBuf)
+	return strings.ToLower(typeBuf.String())
 }
