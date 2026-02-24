@@ -150,10 +150,11 @@ var planCmd = &cobra.Command{
 			EstimatedRows:            estimatedRows,
 			ForeignKeyChecksDisabled: fkChecksDisabled,
 			Connection: &analyzer.ConnectionInfo{
-				Host:   connCfg.Host,
-				Port:   connCfg.Port,
-				User:   connCfg.User,
-				Socket: connCfg.Socket,
+				Host:     connCfg.Host,
+				Port:     connCfg.Port,
+				User:     connCfg.User,
+				Socket:   connCfg.Socket,
+				Database: connCfg.Database,
 			},
 		})
 

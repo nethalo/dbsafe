@@ -55,10 +55,11 @@ const (
 
 // ConnectionInfo holds non-sensitive connection details for command generation.
 type ConnectionInfo struct {
-	Host   string
-	Port   int
-	User   string
-	Socket string
+	Host     string
+	Port     int
+	User     string
+	Socket   string
+	Database string
 }
 
 // Input holds everything the analyzer needs.
@@ -1433,7 +1434,11 @@ func generatePtOSCCommand(input Input, isGalera bool) string {
 		dsn = fmt.Sprintf("h=%s,P=%d", input.Connection.Host, input.Connection.Port)
 	}
 	dsn += fmt.Sprintf(",u=%s", input.Connection.User)
-	dsn += fmt.Sprintf(",D=%s,t=%s", input.Parsed.Database, input.Parsed.Table)
+	database := input.Connection.Database
+	if database == "" {
+		database = input.Parsed.Database
+	}
+	dsn += fmt.Sprintf(",D=%s,t=%s", database, input.Parsed.Table)
 
 	cmd.WriteString(fmt.Sprintf("  %s \\\n", dsn))
 	cmd.WriteString(fmt.Sprintf("  --alter \"%s\" \\\n", alterSpec))
