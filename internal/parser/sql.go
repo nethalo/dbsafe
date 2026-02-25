@@ -135,8 +135,8 @@ func getParser() (*sqlparser.Parser, error) {
 // splitQualified splits a possibly-qualified name (db.table or table) into (db, name).
 func splitQualified(name string) (string, string) {
 	name = strings.Trim(name, "`")
-	if idx := strings.IndexByte(name, '.'); idx >= 0 {
-		return strings.Trim(name[:idx], "`"), strings.Trim(name[idx+1:], "`")
+	if before, after, ok := strings.Cut(name, "."); ok {
+		return strings.Trim(before, "`"), strings.Trim(after, "`")
 	}
 	return "", name
 }

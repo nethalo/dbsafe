@@ -559,7 +559,6 @@ func TestRegression_FullPipeline(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc // capture loop variable
 		t.Run(tc.name, func(t *testing.T) {
 			input := buildRegressionInput(t, tc)
 			result := Analyze(input)

@@ -247,7 +247,7 @@ func EstimateRowsAffected(db *sql.DB, sqlText string) (int64, error) {
 
 	for rows.Next() {
 		values := make([]sql.NullString, len(cols))
-		ptrs := make([]interface{}, len(cols))
+		ptrs := make([]any, len(cols))
 		for i := range values {
 			ptrs[i] = &values[i]
 		}
