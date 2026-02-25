@@ -33,3 +33,12 @@ dist/
 # Claude Code (local dev only)
 CLAUDE.md
 .claude/
+
+# Local dev notes and demo tapes
+CMD_TEST_IMPROVEMENTS.md
+FINAL_COVERAGE_REPORT.md
+INTEGRATION_TEST_SUCCESS.md
+SECURITY_FIXES.md
+TESTING.md
+TEST_IMPROVEMENTS_SUMMARY.md
+*.tape
