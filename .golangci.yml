@@ -1,0 +1,32 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.23"
+
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - gocritic
+    - gofmt
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - noctx
+    - staticcheck
+    - unconvert
+    - unused
+  exclusions:
+    presets:
+      - std-error-handling   # suppresses defer f.Close() / rows.Close() unchecked returns
+    rules:
+      - path: "_test\\.go"
+        linters:
+          - errcheck          # unchecked errors are common/acceptable in tests
+          - gocritic          # test helpers often have patterns gocritic dislikes
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
