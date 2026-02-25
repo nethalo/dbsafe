@@ -86,6 +86,27 @@ const (
 	LoadData DMLOperation = "LOAD_DATA"
 )
 
+// SubOperation holds per-sub-operation details for a multi-op ALTER TABLE.
+// Each entry in SubOperations corresponds to one clause in the compound ALTER.
+type SubOperation struct {
+	Op                DDLOperation
+	ColumnName        string   // ADD/DROP/MODIFY/CHANGE COLUMN (new name for CHANGE)
+	OldColumnName     string   // CHANGE COLUMN original name
+	NewColumnType     string   // CHANGE/MODIFY COLUMN base type
+	NewColumnCharset  string   // MODIFY COLUMN explicit CHARACTER SET
+	NewColumnNullable *bool    // MODIFY COLUMN NULL/NOT NULL
+	IsFirstAfter      bool     // ADD/MODIFY COLUMN ... FIRST|AFTER
+	IndexName         string   // ADD/DROP INDEX, ADD FK, RENAME INDEX
+	IndexColumns      []string // ADD PRIMARY KEY / ADD INDEX columns
+	IsUniqueIndex     bool     // ADD UNIQUE KEY/INDEX
+	HasAutoIncrement  bool     // ADD COLUMN ... AUTO_INCREMENT
+	HasNotNull        bool     // ADD COLUMN ... NOT NULL
+	IsGeneratedStored bool     // ADD/MODIFY ... AS (...) STORED
+	IsGeneratedColumn bool     // ADD/MODIFY ... AS (...) expression
+	NewEngine         string   // ENGINE=<name>
+	CheckExpr         string   // ADD CONSTRAINT CHECK (expr)
+}
+
 // ParsedSQL holds the result of parsing a SQL statement.
 type ParsedSQL struct {
 	Type              StatementType
@@ -110,7 +131,7 @@ type ParsedSQL struct {
 	HasAutoIncrement  bool           // ADD COLUMN ... AUTO_INCREMENT
 	IsGeneratedStored bool           // ADD/MODIFY COLUMN ... AS (...) STORED
 	IsGeneratedColumn bool           // ADD/MODIFY COLUMN has an AS (...) expression (STORED or VIRTUAL)
-	DDLOperations     []DDLOperation // for multi-op ALTER TABLE
+	SubOperations     []SubOperation // for multi-op ALTER TABLE: per-sub-op details
 	TablespaceName    string         // for ALTER TABLESPACE
 	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
 	IndexColumns      []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names
@@ -307,14 +328,12 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 
 		result.DDLOp = MultipleOps
 		for _, opt := range alter.AlterOptions {
-			result.DDLOperations = append(result.DDLOperations, classifySingleAlterOp(opt))
+			subOp := extractAlterOpDetails(opt)
+			result.SubOperations = append(result.SubOperations, subOp)
 			// Propagate AUTO_INCREMENT flag so the analyzer can apply the correct
 			// INPLACE+SHARED classification even inside a multi-op ALTER.
-			if addCols, ok := opt.(*sqlparser.AddColumns); ok {
-				if len(addCols.Columns) > 0 && addCols.Columns[0].Type.Options != nil &&
-					addCols.Columns[0].Type.Options.Autoincrement {
-					result.HasAutoIncrement = true
-				}
+			if subOp.HasAutoIncrement {
+				result.HasAutoIncrement = true
 			}
 		}
 		return
@@ -323,117 +342,138 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 	// Single operation
 	result.DDLOp = classifySingleAlterOp(alter.AlterOptions[0])
 
-	// Extract details for single operations
+	// Extract details via the shared helper and populate SubOperations[0].
+	subOp := extractAlterOpDetails(alter.AlterOptions[0])
+	result.SubOperations = []SubOperation{subOp}
+
+	// Copy common fields to top-level ParsedSQL for backward compatibility with
+	// all existing single-op analyzer paths.
+	result.ColumnName = subOp.ColumnName
+	result.OldColumnName = subOp.OldColumnName
+	result.NewColumnType = subOp.NewColumnType
+	result.NewColumnCharset = subOp.NewColumnCharset
+	result.NewColumnNullable = subOp.NewColumnNullable
+	result.IsFirstAfter = subOp.IsFirstAfter
+	result.IndexName = subOp.IndexName
+	result.IndexColumns = subOp.IndexColumns
+	result.IsUniqueIndex = subOp.IsUniqueIndex
+	result.HasAutoIncrement = subOp.HasAutoIncrement
+	result.HasNotNull = subOp.HasNotNull
+	result.IsGeneratedStored = subOp.IsGeneratedStored
+	result.IsGeneratedColumn = subOp.IsGeneratedColumn
+	result.NewEngine = subOp.NewEngine
+	result.CheckExpr = subOp.CheckExpr
+
+	// Handle fields not in SubOperation (single-op only).
 	switch opt := alter.AlterOptions[0].(type) {
 	case *sqlparser.AddColumns:
 		if len(opt.Columns) > 0 {
 			col := opt.Columns[0]
-			result.ColumnName = col.Name.String()
 			result.ColumnDef = sqlparser.String(col)
-
-			// Check for NOT NULL
-			if col.Type.Options != nil && col.Type.Options.Null != nil && !*col.Type.Options.Null {
-				result.HasNotNull = true
-			}
-
-			// Check for DEFAULT
 			if col.Type.Options != nil && col.Type.Options.Default != nil {
 				result.HasDefault = true
 			}
+		}
+	case *sqlparser.ModifyColumn:
+		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
+	case *sqlparser.ChangeColumn:
+		result.NewColumnName = opt.NewColDefinition.Name.String()
+		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
+	}
+}
 
-			// Check for FIRST/AFTER
-			if opt.First || opt.After != nil {
-				result.IsFirstAfter = true
-			}
+// extractAlterOpDetails classifies a single ALTER TABLE option and extracts all
+// per-op metadata into a SubOperation. Used for both multi-op and single-op paths.
+func extractAlterOpDetails(opt sqlparser.AlterOption) SubOperation {
+	subOp := SubOperation{Op: classifySingleAlterOp(opt)}
 
-			// Check for AUTO_INCREMENT
-			if col.Type.Options != nil && col.Type.Options.Autoincrement {
-				result.HasAutoIncrement = true
-			}
-
-			// Check for generated column (STORED or VIRTUAL).
-			if col.Type.Options != nil && col.Type.Options.As != nil {
-				result.IsGeneratedColumn = true
-				if col.Type.Options.Storage == sqlparser.StoredStorage {
-					result.IsGeneratedStored = true
+	switch o := opt.(type) {
+	case *sqlparser.AddColumns:
+		if len(o.Columns) > 0 {
+			col := o.Columns[0]
+			subOp.ColumnName = col.Name.String()
+			if col.Type.Options != nil {
+				if col.Type.Options.Null != nil && !*col.Type.Options.Null {
+					subOp.HasNotNull = true
 				}
+				if col.Type.Options.Autoincrement {
+					subOp.HasAutoIncrement = true
+				}
+				if col.Type.Options.As != nil {
+					subOp.IsGeneratedColumn = true
+					if col.Type.Options.Storage == sqlparser.StoredStorage {
+						subOp.IsGeneratedStored = true
+					}
+				}
+			}
+			if o.First || o.After != nil {
+				subOp.IsFirstAfter = true
 			}
 		}
 
 	case *sqlparser.DropColumn:
-		result.ColumnName = opt.Name.Name.String()
+		subOp.ColumnName = o.Name.Name.String()
 
 	case *sqlparser.ModifyColumn:
-		result.ColumnName = opt.NewColDefinition.Name.String()
-		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
-		if opt.NewColDefinition.Type != nil {
-			// Extract only the base data type (without NULL/DEFAULT/etc.) to match
-			// INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE for accurate comparison.
-			result.NewColumnType = baseColumnTypeString(opt.NewColDefinition.Type)
-			// Capture explicit CHARACTER SET clause (if any).
-			if opt.NewColDefinition.Type.Charset.Name != "" {
-				result.NewColumnCharset = strings.ToLower(opt.NewColDefinition.Type.Charset.Name)
+		subOp.ColumnName = o.NewColDefinition.Name.String()
+		if o.NewColDefinition.Type != nil {
+			subOp.NewColumnType = baseColumnTypeString(o.NewColDefinition.Type)
+			if o.NewColDefinition.Type.Charset.Name != "" {
+				subOp.NewColumnCharset = strings.ToLower(o.NewColDefinition.Type.Charset.Name)
 			}
-			// Detect explicit NULL/NOT NULL specification for nullability-change detection
-			if opt.NewColDefinition.Type.Options != nil {
-				result.NewColumnNullable = opt.NewColDefinition.Type.Options.Null
+			if o.NewColDefinition.Type.Options != nil {
+				subOp.NewColumnNullable = o.NewColDefinition.Type.Options.Null
+				if o.NewColDefinition.Type.Options.As != nil {
+					subOp.IsGeneratedColumn = true
+					if o.NewColDefinition.Type.Options.Storage == sqlparser.StoredStorage {
+						subOp.IsGeneratedStored = true
+					}
+				}
 			}
 		}
-		// Detect FIRST/AFTER for column reordering
-		if opt.First || opt.After != nil {
-			result.IsFirstAfter = true
-		}
-		// Detect STORED/VIRTUAL generated column in new definition
-		if opt.NewColDefinition.Type != nil && opt.NewColDefinition.Type.Options != nil &&
-			opt.NewColDefinition.Type.Options.As != nil {
-			result.IsGeneratedColumn = true
-			if opt.NewColDefinition.Type.Options.Storage == sqlparser.StoredStorage {
-				result.IsGeneratedStored = true
-			}
+		if o.First || o.After != nil {
+			subOp.IsFirstAfter = true
 		}
 
 	case *sqlparser.ChangeColumn:
-		result.OldColumnName = opt.OldColumn.Name.String()
-		result.NewColumnName = opt.NewColDefinition.Name.String()
-		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
-		if opt.NewColDefinition.Type != nil {
-			// Extract only the base data type (without NULL/DEFAULT/etc.) to match
-			// INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE for accurate comparison.
-			result.NewColumnType = baseColumnTypeString(opt.NewColDefinition.Type)
+		subOp.OldColumnName = o.OldColumn.Name.String()
+		subOp.ColumnName = o.NewColDefinition.Name.String() // new column name
+		if o.NewColDefinition.Type != nil {
+			subOp.NewColumnType = baseColumnTypeString(o.NewColDefinition.Type)
 		}
 
 	case *sqlparser.AddIndexDefinition:
-		result.IndexName = opt.IndexDefinition.Info.Name.String()
-		result.IsUniqueIndex = opt.IndexDefinition.Info.Type == sqlparser.IndexTypeUnique
-		// Extract column names so the analyzer can inspect their nullability (needed for ADD PRIMARY KEY).
-		for _, col := range opt.IndexDefinition.Columns {
+		subOp.IndexName = o.IndexDefinition.Info.Name.String()
+		subOp.IsUniqueIndex = o.IndexDefinition.Info.Type == sqlparser.IndexTypeUnique
+		for _, col := range o.IndexDefinition.Columns {
 			if !col.Column.IsEmpty() {
-				result.IndexColumns = append(result.IndexColumns, col.Column.String())
+				subOp.IndexColumns = append(subOp.IndexColumns, col.Column.String())
 			}
 		}
 
 	case *sqlparser.DropKey:
-		result.IndexName = opt.Name.String()
+		subOp.IndexName = o.Name.String()
 
 	case *sqlparser.AddConstraintDefinition:
-		if chk, ok := opt.ConstraintDefinition.Details.(*sqlparser.CheckConstraintDefinition); ok {
-			result.CheckExpr = sqlparser.String(chk.Expr)
+		if chk, ok := o.ConstraintDefinition.Details.(*sqlparser.CheckConstraintDefinition); ok {
+			subOp.CheckExpr = sqlparser.String(chk.Expr)
 		} else {
-			result.IndexName = opt.ConstraintDefinition.Name.String()
+			subOp.IndexName = o.ConstraintDefinition.Name.String()
 		}
 
 	case *sqlparser.RenameIndex:
-		result.IndexName = opt.OldName.String()
+		subOp.IndexName = o.OldName.String()
 
 	case sqlparser.TableOptions:
-		// Extract the target engine name for ENGINE= changes (used to detect same-engine rebuilds).
-		for _, tableOpt := range opt {
+		for _, tableOpt := range o {
 			if strings.ToUpper(tableOpt.Name) == "ENGINE" && tableOpt.String != "" {
-				result.NewEngine = strings.ToLower(tableOpt.String)
+				subOp.NewEngine = strings.ToLower(tableOpt.String)
 				break
 			}
 		}
 	}
+
+	return subOp
 }
 
 func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {

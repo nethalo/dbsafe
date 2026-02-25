@@ -62,12 +62,20 @@ type jsonTopology struct {
 	AuroraVersion  string `json:"aurora_version,omitempty"`
 }
 
+type jsonSubOperation struct {
+	Operation     string `json:"operation"`
+	Algorithm     string `json:"algorithm"`
+	Lock          string `json:"lock"`
+	RebuildsTable bool   `json:"rebuilds_table"`
+}
+
 type jsonOperation struct {
 	// DDL
-	DDLOp         string `json:"ddl_operation,omitempty"`
-	Algorithm     string `json:"algorithm,omitempty"`
-	Lock          string `json:"lock,omitempty"`
-	RebuildsTable *bool  `json:"rebuilds_table,omitempty"`
+	DDLOp         string              `json:"ddl_operation,omitempty"`
+	Algorithm     string              `json:"algorithm,omitempty"`
+	Lock          string              `json:"lock,omitempty"`
+	RebuildsTable *bool               `json:"rebuilds_table,omitempty"`
+	SubOperations []jsonSubOperation  `json:"sub_operations,omitempty"`
 
 	// DML
 	DMLOp        string  `json:"dml_operation,omitempty"`
@@ -148,12 +156,21 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 	// Operation
 	if result.StatementType == parser.DDL {
 		rebuilds := result.Classification.RebuildsTable
-		out.Operation = jsonOperation{
+		op := jsonOperation{
 			DDLOp:         string(result.DDLOp),
 			Algorithm:     string(result.Classification.Algorithm),
 			Lock:          string(result.Classification.Lock),
 			RebuildsTable: &rebuilds,
 		}
+		for _, sr := range result.SubOpResults {
+			op.SubOperations = append(op.SubOperations, jsonSubOperation{
+				Operation:     string(sr.Op),
+				Algorithm:     string(sr.Classification.Algorithm),
+				Lock:          string(sr.Classification.Lock),
+				RebuildsTable: sr.Classification.RebuildsTable,
+			})
+		}
+		out.Operation = op
 	} else {
 		out.Operation = jsonOperation{
 			DMLOp:        string(result.DMLOp),

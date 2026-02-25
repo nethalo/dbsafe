@@ -137,6 +137,13 @@ func (r *TextRenderer) renderOperationBox(result *analyzer.Result, width int) {
 
 	if result.StatementType == parser.DDL {
 		lines = append(lines, r.labelValue("Type:", string(result.DDLOp)))
+		if len(result.SubOpResults) > 0 {
+			var parts []string
+			for _, sr := range result.SubOpResults {
+				parts = append(parts, fmt.Sprintf("%s (%s/%s)", sr.Op, sr.Classification.Algorithm, sr.Classification.Lock))
+			}
+			lines = append(lines, r.labelValue("Sub-ops:", strings.Join(parts, ", ")))
+		}
 		lines = append(lines, r.labelValue("Algorithm:", r.colorAlgorithm(result.Classification.Algorithm)))
 		lines = append(lines, r.labelValue("Lock:", string(result.Classification.Lock)))
 		lines = append(lines, r.labelValue("Rebuilds table:", fmt.Sprintf("%v", result.Classification.RebuildsTable)))

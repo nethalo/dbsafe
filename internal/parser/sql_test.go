@@ -248,14 +248,20 @@ func TestParse_AlterTableMultipleOps(t *testing.T) {
 	if result.DDLOp != MultipleOps {
 		t.Errorf("DDLOp = %q, want %q", result.DDLOp, MultipleOps)
 	}
-	if len(result.DDLOperations) != 2 {
-		t.Fatalf("DDLOperations length = %d, want 2", len(result.DDLOperations))
+	if len(result.SubOperations) != 2 {
+		t.Fatalf("SubOperations length = %d, want 2", len(result.SubOperations))
 	}
-	if result.DDLOperations[0] != AddColumn {
-		t.Errorf("DDLOperations[0] = %q, want %q", result.DDLOperations[0], AddColumn)
+	if result.SubOperations[0].Op != AddColumn {
+		t.Errorf("SubOperations[0].Op = %q, want %q", result.SubOperations[0].Op, AddColumn)
 	}
-	if result.DDLOperations[1] != DropColumn {
-		t.Errorf("DDLOperations[1] = %q, want %q", result.DDLOperations[1], DropColumn)
+	if result.SubOperations[0].ColumnName != "age" {
+		t.Errorf("SubOperations[0].ColumnName = %q, want %q", result.SubOperations[0].ColumnName, "age")
+	}
+	if result.SubOperations[1].Op != DropColumn {
+		t.Errorf("SubOperations[1].Op = %q, want %q", result.SubOperations[1].Op, DropColumn)
+	}
+	if result.SubOperations[1].ColumnName != "legacy" {
+		t.Errorf("SubOperations[1].ColumnName = %q, want %q", result.SubOperations[1].ColumnName, "legacy")
 	}
 }
 
@@ -949,8 +955,52 @@ func TestParse_MultipleOps_AutoIncrementPropagated(t *testing.T) {
 	if !result.HasAutoIncrement {
 		t.Errorf("HasAutoIncrement = false, want true (should be propagated from ADD COLUMN)")
 	}
-	if len(result.DDLOperations) != 2 {
-		t.Errorf("DDLOperations len = %d, want 2", len(result.DDLOperations))
+	if len(result.SubOperations) != 2 {
+		t.Errorf("SubOperations len = %d, want 2", len(result.SubOperations))
+	}
+	if len(result.SubOperations) >= 1 && !result.SubOperations[0].HasAutoIncrement {
+		t.Errorf("SubOperations[0].HasAutoIncrement = false, want true")
+	}
+}
+
+// TestParse_MultipleOps_IssueExample verifies the issue #46 example:
+// ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT + ADD PRIMARY KEY.
+func TestParse_MultipleOps_IssueExample(t *testing.T) {
+	result, err := Parse("ALTER TABLE dani ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, ADD PRIMARY KEY (id)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != MultipleOps {
+		t.Errorf("DDLOp = %q, want MultipleOps", result.DDLOp)
+	}
+	if len(result.SubOperations) != 2 {
+		t.Fatalf("SubOperations len = %d, want 2", len(result.SubOperations))
+	}
+	// First sub-op: ADD COLUMN with AUTO_INCREMENT
+	subCol := result.SubOperations[0]
+	if subCol.Op != AddColumn {
+		t.Errorf("SubOperations[0].Op = %q, want ADD_COLUMN", subCol.Op)
+	}
+	if subCol.ColumnName != "id" {
+		t.Errorf("SubOperations[0].ColumnName = %q, want id", subCol.ColumnName)
+	}
+	if !subCol.HasAutoIncrement {
+		t.Errorf("SubOperations[0].HasAutoIncrement = false, want true")
+	}
+	if !subCol.HasNotNull {
+		t.Errorf("SubOperations[0].HasNotNull = false, want true")
+	}
+	// Second sub-op: ADD PRIMARY KEY with column list
+	subPK := result.SubOperations[1]
+	if subPK.Op != AddPrimaryKey {
+		t.Errorf("SubOperations[1].Op = %q, want ADD_PRIMARY_KEY", subPK.Op)
+	}
+	if len(subPK.IndexColumns) == 0 || subPK.IndexColumns[0] != "id" {
+		t.Errorf("SubOperations[1].IndexColumns = %v, want [id]", subPK.IndexColumns)
+	}
+	// HasAutoIncrement should be propagated to top-level
+	if !result.HasAutoIncrement {
+		t.Errorf("ParsedSQL.HasAutoIncrement = false, want true")
 	}
 }
 

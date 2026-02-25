@@ -228,7 +228,11 @@ func BenchmarkClassifyDDLWithContext_ComplexDDL(b *testing.B) {
 		Type:          parser.DDL,
 		DDLOp:         parser.MultipleOps,
 		Table:         "products",
-		DDLOperations: []parser.DDLOperation{parser.AddColumn, parser.AddIndex, parser.ModifyColumn},
+		SubOperations: []parser.SubOperation{
+			{Op: parser.AddColumn},
+			{Op: parser.AddIndex},
+			{Op: parser.ModifyColumn},
+		},
 	}
 
 	b.ResetTimer()

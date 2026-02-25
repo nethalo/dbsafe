@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/nethalo/dbsafe/internal/analyzer"
 	"github.com/nethalo/dbsafe/internal/mysql"
@@ -48,6 +49,13 @@ func (r *PlainRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintf(r.w, "--- Operation ---\n")
 	if result.StatementType == parser.DDL {
 		fmt.Fprintf(r.w, "Type:          %s\n", result.DDLOp)
+		if len(result.SubOpResults) > 0 {
+			var parts []string
+			for _, sr := range result.SubOpResults {
+				parts = append(parts, fmt.Sprintf("%s (%s/%s)", sr.Op, sr.Classification.Algorithm, sr.Classification.Lock))
+			}
+			fmt.Fprintf(r.w, "Sub-ops:       %s\n", strings.Join(parts, ", "))
+		}
 		fmt.Fprintf(r.w, "Algorithm:     %s\n", result.Classification.Algorithm)
 		fmt.Fprintf(r.w, "Lock:          %s\n", result.Classification.Lock)
 		fmt.Fprintf(r.w, "Rebuilds:      %v\n", result.Classification.RebuildsTable)

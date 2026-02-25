@@ -73,6 +73,9 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 	if result.StatementType == parser.DDL {
 		fmt.Fprintf(r.w, "| Property | Value |\n|---|---|\n")
 		fmt.Fprintf(r.w, "| Type | %s |\n", result.DDLOp)
+		for _, sr := range result.SubOpResults {
+			fmt.Fprintf(r.w, "| Sub-op: %s | %s / %s |\n", sr.Op, sr.Classification.Algorithm, sr.Classification.Lock)
+		}
 		fmt.Fprintf(r.w, "| Algorithm | **%s** |\n", result.Classification.Algorithm)
 		fmt.Fprintf(r.w, "| Lock | %s |\n", result.Classification.Lock)
 		fmt.Fprintf(r.w, "| Rebuilds table | %v |\n\n", result.Classification.RebuildsTable)

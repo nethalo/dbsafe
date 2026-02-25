@@ -897,8 +897,11 @@ func TestSpec_3_1b_AddColumnAutoIncrementWithUniqueKey(t *testing.T) {
 			Type:             parser.DDL,
 			RawSQL:           "ALTER TABLE t ADD COLUMN seq_id INT NOT NULL AUTO_INCREMENT, ADD UNIQUE KEY (seq_id)",
 			Table:            "t",
-			DDLOp:            parser.MultipleOps,
-			DDLOperations:    []parser.DDLOperation{parser.AddColumn, parser.AddIndex},
+			DDLOp: parser.MultipleOps,
+			SubOperations: []parser.SubOperation{
+				{Op: parser.AddColumn, HasAutoIncrement: true},
+				{Op: parser.AddIndex},
+			},
 			HasAutoIncrement: true,
 		},
 		Meta: &mysql.TableMetadata{
@@ -1402,6 +1405,148 @@ func TestSpec_ModifyColumn_SameCharsetExplicit_IsInplace(t *testing.T) {
 	}
 	if result.Classification.RebuildsTable {
 		t.Errorf("RebuildsTable = true, want false for same-tier varchar extension")
+	}
+}
+
+// =============================================================
+// Section 9 (new): Multi-Op live-metadata refinements
+// =============================================================
+
+// 9.1 Multi-op ADD COLUMN + DROP COLUMN where dropped column is indexed
+// → DROP COLUMN downgraded from INSTANT to INPLACE; aggregate = INPLACE.
+func TestSpec_9_1_MultiOp_DropIndexedColumn_DowngradesInstant(t *testing.T) {
+	parsed := &parser.ParsedSQL{
+		Type:  parser.DDL,
+		Table: "t",
+		DDLOp: parser.MultipleOps,
+		SubOperations: []parser.SubOperation{
+			{Op: parser.AddColumn, ColumnName: "notes"},
+			{Op: parser.DropColumn, ColumnName: "legacy"},
+		},
+	}
+	meta := &mysql.TableMetadata{
+		Database: "testdb",
+		Table:    "t",
+		Indexes:  []mysql.IndexInfo{{Name: "idx_legacy", Columns: []string{"legacy"}, Type: "BTREE"}},
+		Columns:  []mysql.ColumnInfo{{Name: "legacy", Type: "varchar(50)", Nullable: true}},
+	}
+
+	result := Analyze(Input{
+		Parsed:  parsed,
+		Meta:    meta,
+		Version: v8_0_35, // INSTANT-capable version
+		Topo:    standaloneInfo(),
+	})
+
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Algorithm = %q, want INPLACE (DROP indexed col downgrades INSTANT)", result.Classification.Algorithm)
+	}
+	if result.Classification.RebuildsTable != true {
+		t.Error("RebuildsTable = false, want true")
+	}
+	if len(result.SubOpResults) != 2 {
+		t.Fatalf("SubOpResults len = %d, want 2", len(result.SubOpResults))
+	}
+	// ADD_COLUMN should be INSTANT
+	if result.SubOpResults[0].Classification.Algorithm != AlgoInstant {
+		t.Errorf("SubOpResults[0] (ADD_COLUMN) Algorithm = %q, want INSTANT", result.SubOpResults[0].Classification.Algorithm)
+	}
+	// DROP_COLUMN should be INPLACE (downgraded from INSTANT due to index)
+	if result.SubOpResults[1].Classification.Algorithm != AlgoInplace {
+		t.Errorf("SubOpResults[1] (DROP indexed col) Algorithm = %q, want INPLACE", result.SubOpResults[1].Classification.Algorithm)
+	}
+}
+
+// 9.2 Multi-op ADD PRIMARY KEY + nullable column → aggregate upgrades to COPY.
+func TestSpec_9_2_MultiOp_AddPrimaryKey_NullableColumn_IsCopy(t *testing.T) {
+	parsed := &parser.ParsedSQL{
+		Type:  parser.DDL,
+		Table: "t",
+		DDLOp: parser.MultipleOps,
+		SubOperations: []parser.SubOperation{
+			{Op: parser.AddColumn, ColumnName: "tenant_id"},
+			{Op: parser.AddPrimaryKey, IndexColumns: []string{"id", "tenant_id"}},
+		},
+	}
+	meta := &mysql.TableMetadata{
+		Database: "testdb",
+		Table:    "t",
+		Columns: []mysql.ColumnInfo{
+			{Name: "id", Type: "bigint", Nullable: false},
+			{Name: "tenant_id", Type: "int", Nullable: true}, // nullable!
+		},
+	}
+
+	result := Analyze(Input{
+		Parsed:  parsed,
+		Meta:    meta,
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	})
+
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("Algorithm = %q, want COPY (nullable PK column)", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockShared {
+		t.Errorf("Lock = %q, want SHARED", result.Classification.Lock)
+	}
+	if len(result.SubOpResults) != 2 {
+		t.Fatalf("SubOpResults len = %d, want 2", len(result.SubOpResults))
+	}
+	// ADD_PRIMARY_KEY sub-op should be COPY
+	if result.SubOpResults[1].Classification.Algorithm != AlgoCopy {
+		t.Errorf("SubOpResults[1] (ADD_PRIMARY_KEY) Algorithm = %q, want COPY", result.SubOpResults[1].Classification.Algorithm)
+	}
+	// Warning should mention the nullable column
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "tenant_id") && strings.Contains(w, "nullable") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected warning about nullable column 'tenant_id', got none")
+	}
+}
+
+// 9.3 Multi-op CHANGE COLUMN with type change → aggregate is COPY.
+func TestSpec_9_3_MultiOp_ChangeColumn_TypeChange_IsCopy(t *testing.T) {
+	parsed := &parser.ParsedSQL{
+		Type:  parser.DDL,
+		Table: "t",
+		DDLOp: parser.MultipleOps,
+		SubOperations: []parser.SubOperation{
+			{Op: parser.AddIndex, IndexName: "idx_new"},
+			{Op: parser.ChangeColumn, OldColumnName: "price", ColumnName: "price", NewColumnType: "decimal(14,4)"},
+		},
+	}
+	meta := &mysql.TableMetadata{
+		Database: "testdb",
+		Table:    "t",
+		Columns:  []mysql.ColumnInfo{{Name: "price", Type: "decimal(12,2)", Nullable: false}},
+	}
+
+	result := Analyze(Input{
+		Parsed:  parsed,
+		Meta:    meta,
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	})
+
+	if result.Classification.Algorithm != AlgoCopy {
+		t.Errorf("Algorithm = %q, want COPY (type change)", result.Classification.Algorithm)
+	}
+	if len(result.SubOpResults) != 2 {
+		t.Fatalf("SubOpResults len = %d, want 2", len(result.SubOpResults))
+	}
+	// ADD_INDEX sub-op should be INPLACE
+	if result.SubOpResults[0].Classification.Algorithm != AlgoInplace {
+		t.Errorf("SubOpResults[0] (ADD_INDEX) Algorithm = %q, want INPLACE", result.SubOpResults[0].Classification.Algorithm)
+	}
+	// CHANGE_COLUMN sub-op should be COPY
+	if result.SubOpResults[1].Classification.Algorithm != AlgoCopy {
+		t.Errorf("SubOpResults[1] (CHANGE_COLUMN type change) Algorithm = %q, want COPY", result.SubOpResults[1].Classification.Algorithm)
 	}
 }
 

@@ -1062,3 +1062,108 @@ func TestHumanBytes_Output(t *testing.T) {
 		}
 	}
 }
+
+// multiOpResult returns a Result fixture with SubOpResults for multi-op rendering tests.
+func multiOpResult() *analyzer.Result {
+	r := ddlResult()
+	r.Statement = "ALTER TABLE users ADD COLUMN nickname VARCHAR(50), ADD INDEX idx_nickname (nickname)"
+	r.DDLOp = parser.MultipleOps
+	r.Classification = analyzer.DDLClassification{
+		Algorithm:     analyzer.AlgoInplace,
+		Lock:          analyzer.LockNone,
+		RebuildsTable: true,
+		Notes:         "Combined algorithm and lock derived from the most restrictive sub-operation.",
+	}
+	r.SubOpResults = []analyzer.SubOpResult{
+		{
+			Op:             parser.AddColumn,
+			Classification: analyzer.DDLClassification{Algorithm: analyzer.AlgoInstant, Lock: analyzer.LockNone},
+		},
+		{
+			Op:             parser.AddIndex,
+			Classification: analyzer.DDLClassification{Algorithm: analyzer.AlgoInplace, Lock: analyzer.LockNone, RebuildsTable: true},
+		},
+	}
+	r.Risk = analyzer.RiskSafe
+	r.Method = analyzer.ExecDirect
+	return r
+}
+
+func TestTextRenderer_MultiOp_SubOpsLine(t *testing.T) {
+	var buf bytes.Buffer
+	r := &TextRenderer{w: &buf}
+	r.RenderPlan(multiOpResult())
+	out := buf.String()
+
+	if !strings.Contains(out, "MULTIPLE_OPS") {
+		t.Error("text output missing MULTIPLE_OPS type")
+	}
+	if !strings.Contains(out, "Sub-ops:") {
+		t.Error("text output missing Sub-ops: line")
+	}
+	if !strings.Contains(out, "ADD_COLUMN") {
+		t.Error("text output missing ADD_COLUMN in sub-ops")
+	}
+	if !strings.Contains(out, "ADD_INDEX") {
+		t.Error("text output missing ADD_INDEX in sub-ops")
+	}
+}
+
+func TestPlainRenderer_MultiOp_SubOpsLine(t *testing.T) {
+	var buf bytes.Buffer
+	r := &PlainRenderer{w: &buf}
+	r.RenderPlan(multiOpResult())
+	out := buf.String()
+
+	if !strings.Contains(out, "Sub-ops:") {
+		t.Error("plain output missing Sub-ops: line")
+	}
+	if !strings.Contains(out, "ADD_COLUMN") {
+		t.Error("plain output missing ADD_COLUMN in sub-ops")
+	}
+}
+
+func TestMarkdownRenderer_MultiOp_SubOpsRows(t *testing.T) {
+	var buf bytes.Buffer
+	r := &MarkdownRenderer{w: &buf}
+	r.RenderPlan(multiOpResult())
+	out := buf.String()
+
+	if !strings.Contains(out, "Sub-op: ADD_COLUMN") {
+		t.Error("markdown output missing sub-op ADD_COLUMN row")
+	}
+	if !strings.Contains(out, "Sub-op: ADD_INDEX") {
+		t.Error("markdown output missing sub-op ADD_INDEX row")
+	}
+}
+
+func TestJSONRenderer_MultiOp_SubOperations(t *testing.T) {
+	var buf bytes.Buffer
+	r := &JSONRenderer{w: &buf}
+	r.RenderPlan(multiOpResult())
+	out := buf.String()
+
+	if !strings.Contains(out, `"sub_operations"`) {
+		t.Error("JSON output missing sub_operations field")
+	}
+	if !strings.Contains(out, `"ADD_COLUMN"`) {
+		t.Error("JSON sub_operations missing ADD_COLUMN entry")
+	}
+	if !strings.Contains(out, `"ADD_INDEX"`) {
+		t.Error("JSON sub_operations missing ADD_INDEX entry")
+	}
+
+	// Verify valid JSON structure
+	var parsed map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
+		t.Errorf("JSON output is not valid JSON: %v", err)
+	}
+	op, ok := parsed["operation"].(map[string]any)
+	if !ok {
+		t.Fatal("JSON operation field missing or wrong type")
+	}
+	subOps, ok := op["sub_operations"].([]any)
+	if !ok || len(subOps) != 2 {
+		t.Errorf("JSON sub_operations: got %v, want 2-element array", op["sub_operations"])
+	}
+}

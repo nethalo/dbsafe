@@ -78,6 +78,12 @@ type Input struct {
 	ForeignKeyChecksDisabled bool
 }
 
+// SubOpResult holds the per-sub-operation classification for a multi-op ALTER TABLE.
+type SubOpResult struct {
+	Op             parser.DDLOperation
+	Classification DDLClassification
+}
+
 // Result holds the complete analysis output.
 type Result struct {
 	// Metadata
@@ -93,6 +99,7 @@ type Result struct {
 	// DDL-specific
 	DDLOp          parser.DDLOperation
 	Classification DDLClassification
+	SubOpResults   []SubOpResult // per-sub-op classification breakdown (multi-op only)
 
 	// DML-specific
 	DMLOp        parser.DMLOperation
@@ -428,11 +435,14 @@ func analyzeDDL(input Input, result *Result) {
 		}
 	}
 
-	// For MULTIPLE_OPS: classify each sub-operation individually and return the most
-	// restrictive combined result. This handles common compound patterns such as
-	// ADD COLUMN AUTO_INCREMENT + ADD UNIQUE KEY without falling back to the COPY default.
-	if input.Parsed.DDLOp == parser.MultipleOps && len(input.Parsed.DDLOperations) > 0 {
-		result.Classification = aggregateMultipleOps(input.Parsed.DDLOperations, input.Parsed.HasAutoIncrement, v)
+	// For MULTIPLE_OPS: classify each sub-operation individually with live-metadata
+	// refinements and return the most restrictive combined result.
+	if input.Parsed.DDLOp == parser.MultipleOps && len(input.Parsed.SubOperations) > 0 {
+		var subOpWarnings []string
+		result.Classification, result.SubOpResults, subOpWarnings = aggregateMultipleOps(
+			input.Parsed.SubOperations, input.Meta, input.ForeignKeyChecksDisabled, v,
+		)
+		result.Warnings = append(result.Warnings, subOpWarnings...)
 	}
 
 	// For MODIFY COLUMN with FIRST/AFTER: column reorder behavior depends on column type.
@@ -756,16 +766,137 @@ func isStringType(colType string) bool {
 	return false
 }
 
-// aggregateMultipleOps classifies a MULTIPLE_OPS ALTER TABLE by classifying each sub-operation
-// individually and returning the most restrictive combined result. This prevents multi-op
-// statements from falling back to the COPY default when all sub-ops actually support INPLACE.
+// classifySubOp returns the DDL classification and any warnings for a single sub-operation
+// within a multi-op ALTER TABLE, applying the same live-metadata refinements as analyzeDDL.
+func classifySubOp(subOp parser.SubOperation, meta *mysql.TableMetadata, fkChecksDisabled bool, v mysql.ServerVersion) (DDLClassification, []string) {
+	var warnings []string
+
+	// Matrix baseline — with the AUTO_INCREMENT override handled up front.
+	var cls DDLClassification
+	if subOp.Op == parser.AddColumn && subOp.HasAutoIncrement {
+		cls = DDLClassification{Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: true,
+			Notes: "ADD COLUMN with AUTO_INCREMENT: INPLACE with SHARED lock minimum. Full table rebuild required."}
+	} else {
+		cls = ClassifyDDL(subOp.Op, v.Major, v.Minor, v.EffectivePatch())
+	}
+
+	switch subOp.Op {
+	case parser.AddColumn:
+		// STORED generated column requires COPY.
+		if subOp.IsGeneratedStored {
+			cls = DDLClassification{Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true,
+				Notes: "ADD STORED generated column requires COPY algorithm."}
+			warnings = append(warnings, "STORED generated column in compound ALTER: COPY with LOCK=SHARED required.")
+		}
+
+	case parser.DropColumn:
+		if meta != nil {
+			// STORED generated column drop: INPLACE + rebuild.
+			for _, col := range meta.Columns {
+				if strings.EqualFold(col.Name, subOp.ColumnName) && col.IsStoredGenerated {
+					cls = DDLClassification{Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true,
+						Notes: "DROP STORED generated column: INPLACE with table rebuild."}
+					break
+				}
+			}
+			// Indexed column: downgrade INSTANT to INPLACE + rebuild.
+			if cls.Algorithm == AlgoInstant {
+				for _, idx := range meta.Indexes {
+					for _, idxCol := range idx.Columns {
+						if strings.EqualFold(idxCol, subOp.ColumnName) {
+							cls = DDLClassification{Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true,
+								Notes: fmt.Sprintf("DROP COLUMN on indexed column '%s': INPLACE with rebuild.", subOp.ColumnName)}
+							warnings = append(warnings, fmt.Sprintf(
+								"Column '%s' is part of index '%s'. Consider dropping the index first.",
+								subOp.ColumnName, idx.Name))
+							break
+						}
+					}
+					if cls.Algorithm == AlgoInplace {
+						break
+					}
+				}
+			}
+		}
+
+	case parser.ChangeColumn:
+		if subOp.OldColumnName != "" && subOp.NewColumnType != "" && meta != nil {
+			oldType := findColumnType(meta.Columns, subOp.OldColumnName)
+			if oldType != "" && !strings.EqualFold(
+				strings.ReplaceAll(oldType, " ", ""),
+				strings.ReplaceAll(subOp.NewColumnType, " ", ""),
+			) {
+				cls = DDLClassification{Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true,
+					Notes: "Data type change requires COPY algorithm."}
+				warnings = append(warnings, fmt.Sprintf(
+					"Column '%s' type change detected: %s → %s. COPY algorithm required.",
+					subOp.OldColumnName, oldType, subOp.NewColumnType,
+				))
+			}
+		}
+
+	case parser.ModifyColumn:
+		if subOp.NewColumnType != "" && meta != nil {
+			oldType := findColumnType(meta.Columns, subOp.ColumnName)
+			if oldType != "" {
+				if subOp.NewColumnCharset == "" {
+					// No charset change: try INSTANT/INPLACE optimizations.
+					if c, ok := classifyModifyColumnEnum(oldType, subOp.NewColumnType); ok {
+						cls = c
+					} else {
+						charset := findColumnCharset(meta.Columns, subOp.ColumnName)
+						if c, ok := classifyModifyColumnVarchar(oldType, subOp.NewColumnType, charset); ok {
+							cls = c
+						}
+					}
+				}
+			}
+		}
+
+	case parser.AddPrimaryKey:
+		if len(subOp.IndexColumns) > 0 && meta != nil {
+			for _, colName := range subOp.IndexColumns {
+				for _, col := range meta.Columns {
+					if strings.EqualFold(col.Name, colName) && col.Nullable {
+						cls = DDLClassification{Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: true,
+							Notes: "Nullable PK column requires COPY."}
+						warnings = append(warnings, fmt.Sprintf(
+							"Column '%s' is nullable: ADD PRIMARY KEY on a nullable column requires COPY algorithm.",
+							colName,
+						))
+						break
+					}
+				}
+				if cls.Algorithm == AlgoCopy {
+					break
+				}
+			}
+		}
+
+	case parser.AddForeignKey:
+		if !fkChecksDisabled {
+			cls = DDLClassification{Algorithm: AlgoCopy, Lock: LockShared, RebuildsTable: false,
+				Notes: "ADD FOREIGN KEY with foreign_key_checks=ON requires COPY."}
+			warnings = append(warnings, "foreign_key_checks=ON: COPY algorithm required for ADD FOREIGN KEY.")
+		}
+
+	case parser.ChangeEngine:
+		if subOp.NewEngine != "" && meta != nil && strings.EqualFold(subOp.NewEngine, meta.Engine) {
+			cls = DDLClassification{Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: true,
+				Notes: "ENGINE=<same engine>: equivalent to ALTER TABLE ... FORCE. INPLACE rebuild."}
+		}
+	}
+
+	return cls, warnings
+}
+
+// aggregateMultipleOps classifies a MULTIPLE_OPS ALTER TABLE by applying live-metadata
+// refinements to each sub-operation and returning the most restrictive combined result,
+// per-sub-op results, and any per-sub-op warnings.
 //
 // Algorithm precedence (most to least restrictive): COPY > INPLACE > INSTANT
 // Lock precedence (most to least restrictive): EXCLUSIVE > SHARED > NONE
-//
-// Special handling: if hasAutoIncrement is true, the ADD COLUMN sub-op is classified as
-// INPLACE+SHARED+rebuild rather than the matrix default of INSTANT (MySQL 8.0 Table 17.18).
-func aggregateMultipleOps(ops []parser.DDLOperation, hasAutoIncrement bool, v mysql.ServerVersion) DDLClassification {
+func aggregateMultipleOps(subOps []parser.SubOperation, meta *mysql.TableMetadata, fkChecksDisabled bool, v mysql.ServerVersion) (DDLClassification, []SubOpResult, []string) {
 	algoPriority := map[Algorithm]int{AlgoInstant: 0, AlgoInplace: 1, AlgoCopy: 2}
 	lockPriority := map[LockLevel]int{LockNone: 0, LockShared: 1, LockExclusive: 2}
 
@@ -774,14 +905,13 @@ func aggregateMultipleOps(ops []parser.DDLOperation, hasAutoIncrement bool, v my
 		Lock:      LockNone,
 	}
 
-	for _, op := range ops {
-		var cls DDLClassification
-		if op == parser.AddColumn && hasAutoIncrement {
-			// AUTO_INCREMENT ADD COLUMN: INPLACE+SHARED+rebuild (not INSTANT from the matrix).
-			cls = DDLClassification{Algorithm: AlgoInplace, Lock: LockShared, RebuildsTable: true}
-		} else {
-			cls = ClassifyDDL(op, v.Major, v.Minor, v.EffectivePatch())
-		}
+	var subOpResults []SubOpResult
+	var allWarnings []string
+
+	for _, subOp := range subOps {
+		cls, warnings := classifySubOp(subOp, meta, fkChecksDisabled, v)
+		subOpResults = append(subOpResults, SubOpResult{Op: subOp.Op, Classification: cls})
+		allWarnings = append(allWarnings, warnings...)
 
 		if algoPriority[cls.Algorithm] > algoPriority[combined.Algorithm] {
 			combined.Algorithm = cls.Algorithm
@@ -795,7 +925,7 @@ func aggregateMultipleOps(ops []parser.DDLOperation, hasAutoIncrement bool, v my
 	}
 
 	combined.Notes = "Combined algorithm and lock derived from the most restrictive sub-operation."
-	return combined
+	return combined, subOpResults, allWarnings
 }
 
 // findColumnType returns the type string for a column by name, or empty if not found.
