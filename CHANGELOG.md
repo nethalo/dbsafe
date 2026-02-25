@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-02-25
+
+### Added
+- Suggested DDL: when an `ALTER TABLE` can run `INSTANT` or `INPLACE`, dbsafe now outputs the original statement with `, ALGORITHM=X, LOCK=Y;` appended — a ready-to-copy command shown in all four output formats (text, plain, json, markdown) (#45)
+
 ## [0.5.0] - 2026-02-25
 
 ### Added
