@@ -92,6 +92,14 @@ SELECT ROUND(RAND()*100,2), FLOOR(RAND()*10)+1, CONCAT('item_', seq)
 FROM (SELECT @r:=@r+1 AS seq FROM information_schema.tables t1,
       (SELECT @r:=0) r LIMIT 1000) s;
 
+-- For ENUM/SET modification tests (Section 3.13)
+CREATE TABLE IF NOT EXISTS enum_test (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    priority ENUM('low','medium','high') NOT NULL DEFAULT 'low'
+) ENGINE=InnoDB;
+
+INSERT INTO enum_test (priority) VALUES ('low'), ('medium'), ('high'), ('low'), ('high');
+
 -- For tablespace tests
 CREATE TABLE IF NOT EXISTS tablespace_test (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -381,8 +389,9 @@ ALTER TABLE orders DROP COLUMN loyalty_points
 | Metadata Only | Yes |
 
 ```sql
--- Keep exact same type as the existing column
-ALTER TABLE orders CHANGE COLUMN status order_status ENUM('pending','processing','shipped','delivered','cancelled') NOT NULL DEFAULT 'pending'
+-- Keep exact same type as the existing column.
+-- orders.status is varchar(20) NOT NULL DEFAULT 'pending'
+ALTER TABLE orders CHANGE COLUMN status order_status VARCHAR(20) NOT NULL DEFAULT 'pending'
 ```
 
 **Verify:** INSTANT (≥8.0.28) or INPLACE. No rebuild. `dbsafe` must detect the type is unchanged.
@@ -401,7 +410,7 @@ ALTER TABLE orders CHANGE COLUMN status order_status ENUM('pending','processing'
 ALTER TABLE orders CHANGE COLUMN total_amount amount DECIMAL(14,4)
 ```
 
-**Verify:** `dbsafe` MUST report **COPY**. `total_amount` is `DECIMAL(10,2)`, changing to `DECIMAL(14,4)` is a data type change. This is the exact bug #18 scenario.
+**Verify:** `dbsafe` MUST report **COPY**. `total_amount` is `DECIMAL(12,2)`, changing to `DECIMAL(14,4)` is a data type change. This is the exact bug #18 scenario.
 
 **Additional sub-cases:**
 ```sql
@@ -409,7 +418,8 @@ ALTER TABLE orders CHANGE COLUMN total_amount amount DECIMAL(14,4)
 ALTER TABLE orders MODIFY COLUMN total_amount DECIMAL(14,4)
 
 -- CHANGE with same type — must NOT be COPY (should be INSTANT/INPLACE)
-ALTER TABLE orders CHANGE COLUMN total_amount order_total DECIMAL(10,2) NOT NULL DEFAULT 0.00
+-- orders.total_amount is DECIMAL(12,2) NOT NULL
+ALTER TABLE orders CHANGE COLUMN total_amount order_total DECIMAL(12,2) NOT NULL
 ```
 
 ### 3.5 Reordering Columns
@@ -423,7 +433,9 @@ ALTER TABLE orders CHANGE COLUMN total_amount order_total DECIMAL(10,2) NOT NULL
 | Metadata Only | No |
 
 ```sql
-ALTER TABLE orders MODIFY COLUMN payment_method VARCHAR(20) AFTER id
+-- orders.payment_method is varchar(50) NOT NULL — must use the exact same type to test
+-- reorder only (changing to a different length would trigger a type change → COPY)
+ALTER TABLE orders MODIFY COLUMN payment_method VARCHAR(50) NOT NULL AFTER id
 ```
 
 **Verify:** INPLACE, rebuilds table (expensive), concurrent DML allowed.
@@ -526,7 +538,8 @@ ALTER TABLE orders AUTO_INCREMENT = 99999999
 | Metadata Only | No |
 
 ```sql
-ALTER TABLE customers MODIFY COLUMN name VARCHAR(100) NULL
+-- customers has no 'name' column; use first_name which is varchar(50) NOT NULL
+ALTER TABLE customers MODIFY COLUMN first_name VARCHAR(50) NULL
 ```
 
 **Verify:** INPLACE, rebuilds table, concurrent DML allowed.
@@ -542,7 +555,9 @@ ALTER TABLE customers MODIFY COLUMN name VARCHAR(100) NULL
 | Metadata Only | No |
 
 ```sql
-ALTER TABLE customers MODIFY COLUMN email VARCHAR(200) NOT NULL
+-- customers.email is already NOT NULL; use phone which is varchar(20) NULL
+-- (demo data has no NULL phone values, so this succeeds under STRICT mode)
+ALTER TABLE customers MODIFY COLUMN phone VARCHAR(20) NOT NULL
 ```
 
 **Verify:** INPLACE, rebuilds table. Requires STRICT mode; fails if existing NULLs. `dbsafe` should ideally warn about NULL values.
@@ -558,15 +573,16 @@ ALTER TABLE customers MODIFY COLUMN email VARCHAR(200) NOT NULL
 | Metadata Only | Yes |
 
 ```sql
--- Adding members at the END of the list
-ALTER TABLE orders MODIFY COLUMN status ENUM('pending','processing','shipped','delivered','cancelled','refunded')
+-- Use enum_test table (created in setup) — orders.status is varchar(20), not ENUM
+-- Adding a member at the END of the list
+ALTER TABLE enum_test MODIFY COLUMN priority ENUM('low','medium','high','critical')
 ```
 
 **Verify:** INSTANT, metadata-only.
 
 **Edge case — adding member NOT at the end (reorder/insert in middle):**
 ```sql
-ALTER TABLE orders MODIFY COLUMN status ENUM('new','pending','processing','shipped','delivered','cancelled')
+ALTER TABLE enum_test MODIFY COLUMN priority ENUM('critical','low','medium','high')
 ```
 **Verify:** This changes storage representation → requires COPY. `dbsafe` should NOT report INSTANT.
 
@@ -684,21 +700,25 @@ Use the `order_items` table (has FKs to `orders` and `products`).
 
 ### 5.1 Adding a Foreign Key Constraint
 
-| Property | Expected |
-|----------|----------|
+| Property | Expected (fk_checks=ON, the default) |
+|----------|---------------------------------------|
 | Instant | No |
-| In Place | Yes* |
+| In Place | No (COPY when fk_checks=ON) |
 | Rebuilds Table | No |
-| Concurrent DML | Yes |
+| Concurrent DML | No |
 | Metadata Only | No |
 
 ```sql
--- INPLACE is supported when foreign_key_checks is disabled
--- With foreign_key_checks enabled, only COPY is supported
+-- With foreign_key_checks=ON (default): COPY algorithm required (MySQL Table 17.17 Note 3)
+-- With foreign_key_checks=OFF: INPLACE is allowed
 ALTER TABLE order_items ADD CONSTRAINT fk_test FOREIGN KEY (order_id) REFERENCES orders(id)
 ```
 
-**Verify:** `dbsafe` should check the state of `foreign_key_checks` and report accordingly. If enabled → COPY; if disabled → INPLACE.
+**Verify:** `dbsafe` checks the state of `foreign_key_checks` and reports accordingly.
+- **fk_checks=ON (demo default):** `dbsafe` must report **COPY**. Concurrent DML = No.
+- **fk_checks=OFF:** `dbsafe` reports INPLACE. Concurrent DML = Yes.
+
+The demo runs with `foreign_key_checks=ON`, so expect **COPY**.
 
 ### 5.2 Dropping a Foreign Key Constraint
 
@@ -772,12 +792,12 @@ ALTER TABLE orders STATS_PERSISTENT=0, STATS_SAMPLE_PAGES=20, STATS_AUTO_RECALC=
 
 ### 6.4 Converting Character Set
 
-| Property | Expected |
-|----------|----------|
+| Property | Expected for `orders` (has indexed string columns) |
+|----------|-----------------------------------------------------|
 | Instant | No |
-| In Place | Yes* |
-| Rebuilds Table | Yes (if encoding differs) |
-| Concurrent DML | Yes |
+| In Place | No (COPY — indexed string columns exist) |
+| Rebuilds Table | Yes |
+| Concurrent DML | No |
 | Metadata Only | No |
 
 ```sql
@@ -785,25 +805,33 @@ ALTER TABLE orders STATS_PERSISTENT=0, STATS_SAMPLE_PAGES=20, STATS_AUTO_RECALC=
 ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4
 ```
 
-**Verify:** INPLACE, rebuilds table (encoding differs). This is already in the DEMO.md as the second "DANGEROUS" example. On the 1.2 GB `orders` table, `dbsafe` must flag this as DANGEROUS and generate pt-osc/gh-ost commands.
+**Verify:** **COPY**, rebuilds table. This is already in the DEMO.md as the second "DANGEROUS" example. On the 1.2 GB `orders` table, `dbsafe` must flag this as DANGEROUS and generate pt-osc/gh-ost commands. Concurrent DML = No (SHARED lock blocks writes regardless of algorithm).
 
-**Note:** INPLACE is NOT supported for tables with FULLTEXT indexes; those require COPY.
+**Algorithm selection (WL#11605):** Per MySQL docs Table 17.21 Note 5:
+- **No indexed string columns** → INPLACE (but SHARED lock still applies; concurrent DML = No)
+- **Any indexed string column exists** → COPY required
+
+The `orders` table has indexed string columns: `idx_status` on `status varchar(20)` and `idx_payment_method` on `payment_method varchar(50)`. Therefore COPY is required.
+
+**Note:** "Indexed string columns" means any column of type varchar, char, text, enum, or set that has a BTREE or HASH index — not just FULLTEXT indexes.
 
 ### 6.5 Specifying a Character Set (column level)
 
 | Property | Expected |
 |----------|----------|
 | Instant | No |
-| In Place | Yes* |
-| Rebuilds Table | Yes (if encoding differs) |
-| Concurrent DML | Yes |
+| In Place | No (COPY — MySQL docs Table 17.18) |
+| Rebuilds Table | Yes |
+| Concurrent DML | No |
 | Metadata Only | No |
 
 ```sql
-ALTER TABLE orders MODIFY COLUMN payment_method VARCHAR(20) CHARACTER SET utf8mb4
+-- orders.payment_method is varchar(50) NOT NULL — use the correct width to isolate
+-- the charset change (using VARCHAR(20) would also shrink the column, also causing COPY)
+ALTER TABLE orders MODIFY COLUMN payment_method VARCHAR(50) CHARACTER SET utf8mb4
 ```
 
-**Verify:** INPLACE, rebuilds table if charset is actually different.
+**Verify:** **COPY**, rebuilds table. Per MySQL docs Table 17.18, column-level character set changes always require COPY. Concurrent DML = No. Use pt-osc or gh-ost for large tables.
 
 ### 6.6 Rebuilding a Table (FORCE / null ALTER)
 

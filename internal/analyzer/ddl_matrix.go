@@ -140,12 +140,12 @@ var ddlMatrix = map[matrixKey]DDLClassification{
 		Notes: "INPLACE if only renaming. If data type changes, falls back to COPY.",
 	},
 	{parser.ChangeColumn, V8_0_Full}: {
-		Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false,
-		Notes: "INPLACE (metadata-only) for rename with same type. If data type changes, requires COPY with SHARED lock.",
+		Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false,
+		Notes: "INSTANT rename (≥8.0.29; MySQL Bug#33175960 shipped in 8.0.28 but V8_0_Full bucket starts at 8.0.29). If data type changes, requires COPY with SHARED lock.",
 	},
 	{parser.ChangeColumn, V8_4_LTS}: {
-		Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false,
-		Notes: "INPLACE (metadata-only) for rename with same type. If data type changes, requires COPY with SHARED lock.",
+		Algorithm: AlgoInstant, Lock: LockNone, RebuildsTable: false,
+		Notes: "INSTANT rename. If data type changes, requires COPY with SHARED lock.",
 	},
 
 	// ═══════════════════════════════════════════════════

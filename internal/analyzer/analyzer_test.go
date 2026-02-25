@@ -1425,12 +1425,23 @@ func TestColumnValidation_ChangeColumn_SameNameAllowed(t *testing.T) {
 	}
 }
 
-func TestClassifyDDL_ChangeColumn_NeverInstant(t *testing.T) {
-	// INSTANT is never valid for CHANGE COLUMN in any MySQL version.
-	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {
-		c := ClassifyDDL(parser.ChangeColumn, v.Major, v.Minor, v.Patch)
-		if c.Algorithm == AlgoInstant {
-			t.Errorf("v%d.%d.%d: ChangeColumn should never be INSTANT, got %s", v.Major, v.Minor, v.Patch, c.Algorithm)
+func TestClassifyDDL_ChangeColumn_AlgorithmByVersion(t *testing.T) {
+	// CHANGE COLUMN rename-only is INPLACE before MySQL 8.0.29 (Bug#33175960 added INSTANT in 8.0.28,
+	// which maps to V8_0_Full range starting at 8.0.29 in our version bucketing).
+	// From 8.0.29+ (V8_0_Full) and 8.4, INSTANT is used.
+	tests := []struct {
+		v        mysql.ServerVersion
+		wantAlgo Algorithm
+	}{
+		{v8_0_5, AlgoInplace},   // V8_0_Early
+		{v8_0_20, AlgoInplace},  // V8_0_Instant
+		{v8_0_35, AlgoInstant},  // V8_0_Full
+		{v8_4_0, AlgoInstant},   // V8_4_LTS
+	}
+	for _, tt := range tests {
+		c := ClassifyDDL(parser.ChangeColumn, tt.v.Major, tt.v.Minor, tt.v.Patch)
+		if c.Algorithm != tt.wantAlgo {
+			t.Errorf("v%d.%d.%d: ChangeColumn algorithm = %s, want %s", tt.v.Major, tt.v.Minor, tt.v.Patch, c.Algorithm, tt.wantAlgo)
 		}
 	}
 }
@@ -1462,24 +1473,38 @@ func TestChangeColumn_TypeChange_RequiresCopy(t *testing.T) {
 	}
 }
 
-func TestChangeColumn_RenameOnly_UsesInplace(t *testing.T) {
-	// Rename with same type stays INPLACE (no COPY needed).
-	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
-	input.Parsed.OldColumnName = "existing_col"
-	input.Parsed.NewColumnName = "renamed_col"
-	input.Parsed.NewColumnType = "decimal(12,2)" // same type as in metadata
-	input.Meta.Columns = []mysql.ColumnInfo{
-		{Name: "id", Type: "int", Position: 1},
-		{Name: "existing_col", Type: "decimal(12,2)", Position: 2},
+func TestChangeColumn_RenameOnly_UsesInstant(t *testing.T) {
+	// Rename with same type uses INSTANT on MySQL ≥8.0.29 (MySQL Bug#33175960).
+	// On older MySQL (<8.0.29) it falls back to INPLACE.
+	tests := []struct {
+		version  mysql.ServerVersion
+		wantAlgo Algorithm
+	}{
+		{mysql.ServerVersion{Major: 8, Minor: 0, Patch: 20}, AlgoInplace},  // V8_0_Instant → INPLACE
+		{mysql.ServerVersion{Major: 8, Minor: 0, Patch: 29}, AlgoInstant},  // V8_0_Full → INSTANT
+		{mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, AlgoInstant},  // V8_0_Full → INSTANT
+		{mysql.ServerVersion{Major: 8, Minor: 4, Patch: 0}, AlgoInstant},   // V8_4_LTS → INSTANT
 	}
+	for _, tt := range tests {
+		input := ddlInput(parser.ChangeColumn, tt.version, 0, topology.Standalone)
+		input.Parsed.OldColumnName = "existing_col"
+		input.Parsed.NewColumnName = "renamed_col"
+		input.Parsed.NewColumnType = "decimal(12,2)" // same type as in metadata
+		input.Meta.Columns = []mysql.ColumnInfo{
+			{Name: "id", Type: "int", Position: 1},
+			{Name: "existing_col", Type: "decimal(12,2)", Position: 2},
+		}
 
-	result := Analyze(input)
+		result := Analyze(input)
 
-	if result.Classification.Algorithm != AlgoInplace {
-		t.Errorf("Expected INPLACE for rename-only, got %s", result.Classification.Algorithm)
-	}
-	if containsWarning(result.Warnings, "type change detected") {
-		t.Errorf("Should not warn about type change for rename-only, got: %v", result.Warnings)
+		if result.Classification.Algorithm != tt.wantAlgo {
+			t.Errorf("v%d.%d.%d: Expected %s for rename-only, got %s",
+				tt.version.Major, tt.version.Minor, tt.version.Patch, tt.wantAlgo, result.Classification.Algorithm)
+		}
+		if containsWarning(result.Warnings, "type change detected") {
+			t.Errorf("v%d.%d.%d: Should not warn about type change for rename-only, got: %v",
+				tt.version.Major, tt.version.Minor, tt.version.Patch, result.Warnings)
+		}
 	}
 }
 
@@ -1518,19 +1543,19 @@ func TestChangeColumn_RenameOnly_BaseTypeOnly_NoFalsePositive(t *testing.T) {
 			name:          "varchar same type — parser strips NOT NULL DEFAULT",
 			oldType:       "varchar(20)",
 			newColumnType: "varchar(20)", // was: "varchar(20) not null default 'pending'"
-			wantAlgo:      AlgoInplace,
+			wantAlgo:      AlgoInstant,   // INSTANT on MySQL ≥8.0.29 (Bug#33175960)
 		},
 		{
 			name:          "decimal same type — parser strips NOT NULL DEFAULT",
 			oldType:       "decimal(12,2)",
 			newColumnType: "decimal(12,2)", // was: "decimal(12,2) not null default 0.00"
-			wantAlgo:      AlgoInplace,
+			wantAlgo:      AlgoInstant,     // INSTANT on MySQL ≥8.0.29
 		},
 		{
 			name:          "int unsigned same type — base type includes unsigned modifier",
 			oldType:       "int unsigned",
 			newColumnType: "int unsigned",
-			wantAlgo:      AlgoInplace,
+			wantAlgo:      AlgoInstant, // INSTANT on MySQL ≥8.0.29
 		},
 	}
 

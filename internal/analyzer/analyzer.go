@@ -206,7 +206,8 @@ func analyzeDDL(input Input, result *Result) {
 	}
 
 	// For CHANGE COLUMN: check if the data type is actually changing.
-	// The matrix baseline assumes rename-only (INPLACE). If the type changes, COPY is required.
+	// The matrix baseline is INSTANT (≥8.0.29) or INPLACE (older) for rename-only.
+	// If the type changes, COPY is required regardless of version.
 	if input.Parsed.DDLOp == parser.ChangeColumn && input.Parsed.NewColumnType != "" {
 		if oldType := findColumnType(input.Meta.Columns, input.Parsed.OldColumnName); oldType != "" {
 			if !strings.EqualFold(strings.ReplaceAll(oldType, " ", ""), strings.ReplaceAll(input.Parsed.NewColumnType, " ", "")) {
