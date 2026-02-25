@@ -64,23 +64,59 @@ dbsafe plan "ALTER TABLE users ADD COLUMN email VARCHAR(255)"
 
 ## 💡 Examples
 
+**DDL analysis** — INPLACE on a 1.2 GB table, recommends gh-ost or pt-osc:
+
 ```bash
-# DDL analysis
 dbsafe plan "ALTER TABLE orders ADD INDEX idx_created (created_at)"
+```
 
-# CHANGE COLUMN — detects rename-only (INPLACE) vs type change (COPY) using live schema
+![DDL analysis: ADD INDEX on orders](assets/dbsafe-add-index.png)
+
+---
+
+**CHANGE COLUMN** — detects rename-only (INPLACE) vs type change (COPY) using live schema:
+
+```bash
 dbsafe plan "ALTER TABLE orders CHANGE COLUMN total_amount amount DECIMAL(14,4)"
+```
 
-# DML with chunked script generation
-dbsafe plan "DELETE FROM logs WHERE created_at < '2023-01-01'"
+![CHANGE COLUMN: type change detected as COPY/DANGEROUS](assets/dbsafe-change-column.png)
 
-# JSON output for CI/CD
-dbsafe plan --format json "ALTER TABLE users DROP COLUMN legacy_field" | jq .
+---
 
-# Idempotent wrapper — safe to re-run; outputs a stored procedure with IF NOT EXISTS guard
+**DML with chunked script generation** — safe batched deletes for large tables:
+
+```bash
+dbsafe plan "DELETE FROM audit_log WHERE created_at < '2025-06-01'"
+```
+
+![DML analysis: chunked DELETE script](assets/dbsafe-dml-chunked.png)
+
+---
+
+**JSON output** for CI/CD pipelines:
+
+```bash
+dbsafe plan --format json "ALTER TABLE customers DROP COLUMN phone" | jq .
+```
+
+![JSON output for CI/CD](assets/dbsafe-json-output.png)
+
+---
+
+**Idempotent wrapper** — safe to re-run; outputs a stored procedure with IF NOT EXISTS guard:
+
+```bash
 dbsafe plan --idempotent "ALTER TABLE orders ADD COLUMN email VARCHAR(255)"
+```
 
-# From a file
+![Idempotent SP wrapper](assets/dbsafe-idempotent.png)
+
+---
+
+**From a file:**
+
+```bash
 dbsafe plan --file migration.sql
 ```
 
