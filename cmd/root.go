@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -49,15 +50,24 @@ func init() {
 	rootCmd.PersistentFlags().String("tls-ca", "", "Path to CA certificate PEM file (required when --tls=custom)")
 
 	// Bind flags to viper
-	viper.BindPFlag("host", rootCmd.PersistentFlags().Lookup("host"))
-	viper.BindPFlag("port", rootCmd.PersistentFlags().Lookup("port"))
-	viper.BindPFlag("user", rootCmd.PersistentFlags().Lookup("user"))
-	viper.BindPFlag("database", rootCmd.PersistentFlags().Lookup("database"))
-	viper.BindPFlag("socket", rootCmd.PersistentFlags().Lookup("socket"))
-	viper.BindPFlag("format", rootCmd.PersistentFlags().Lookup("format"))
-	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
-	viper.BindPFlag("tls", rootCmd.PersistentFlags().Lookup("tls"))
-	viper.BindPFlag("tls_ca", rootCmd.PersistentFlags().Lookup("tls-ca"))
+	mustBindFlag("host", rootCmd.PersistentFlags().Lookup("host"))
+	mustBindFlag("port", rootCmd.PersistentFlags().Lookup("port"))
+	mustBindFlag("user", rootCmd.PersistentFlags().Lookup("user"))
+	mustBindFlag("database", rootCmd.PersistentFlags().Lookup("database"))
+	mustBindFlag("socket", rootCmd.PersistentFlags().Lookup("socket"))
+	mustBindFlag("format", rootCmd.PersistentFlags().Lookup("format"))
+	mustBindFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	mustBindFlag("tls", rootCmd.PersistentFlags().Lookup("tls"))
+	mustBindFlag("tls_ca", rootCmd.PersistentFlags().Lookup("tls-ca"))
+}
+
+// mustBindFlag binds a cobra flag to a viper key, panicking on error.
+// BindPFlag only errors when the flag pointer is nil, which cannot happen here
+// since all flags are defined in the same init() call above.
+func mustBindFlag(key string, flag *pflag.Flag) {
+	if err := viper.BindPFlag(key, flag); err != nil {
+		panic(fmt.Sprintf("failed to bind flag %q: %v", key, err))
+	}
 }
 
 func initConfig() {

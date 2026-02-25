@@ -176,9 +176,9 @@ func TestParse_AlterTableAddForeignKey(t *testing.T) {
 
 func TestParse_AddCheckConstraint(t *testing.T) {
 	tests := []struct {
-		name      string
-		sql       string
-		wantExpr  string
+		name     string
+		sql      string
+		wantExpr string
 	}{
 		{
 			name:     "simple check on column",
@@ -1300,10 +1300,10 @@ func TestParse_ModifyColumn_NoNullSpec_NilNullable(t *testing.T) {
 
 func TestParse_ModifyColumn_Charset(t *testing.T) {
 	tests := []struct {
-		name              string
-		sql               string
-		wantCharset       string
-		wantColumnName    string
+		name           string
+		sql            string
+		wantCharset    string
+		wantColumnName string
 	}{
 		{
 			name:           "explicit charset",
@@ -1345,10 +1345,10 @@ func TestParse_ModifyColumn_Charset(t *testing.T) {
 
 func TestParse_OptimizeTable(t *testing.T) {
 	tests := []struct {
-		name     string
-		sql      string
-		wantDB   string
-		wantTbl  string
+		name    string
+		sql     string
+		wantDB  string
+		wantTbl string
 	}{
 		{
 			name:    "simple",

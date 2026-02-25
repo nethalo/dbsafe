@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -234,8 +235,10 @@ func detectGroupReplication(db *sql.DB, info *Info) (bool, error) {
 	txLimit, _ := mysql.GetVariableInt(db, "group_replication_transaction_size_limit")
 	info.GRTransactionLimit = txLimit
 
+	ctx := context.Background()
+
 	// Member count and role from performance_schema
-	rows, err := db.Query(`
+	rows, err := db.QueryContext(ctx, `
 		SELECT MEMBER_ROLE, MEMBER_STATE
 		FROM performance_schema.replication_group_members
 		WHERE MEMBER_HOST = @@hostname AND MEMBER_PORT = @@port
@@ -252,7 +255,7 @@ func detectGroupReplication(db *sql.DB, info *Info) (bool, error) {
 
 	// Total member count
 	var count int
-	err = db.QueryRow(`
+	err = db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM performance_schema.replication_group_members
 		WHERE MEMBER_STATE = 'ONLINE'
@@ -268,10 +271,10 @@ func detectReplication(db *sql.DB, info *Info) (bool, error) {
 	detected := false
 
 	// Check if this server is a replica
-	rows, err := db.Query("SHOW REPLICA STATUS")
+	rows, err := db.QueryContext(context.Background(), "SHOW REPLICA STATUS")
 	if err != nil {
 		// Try older syntax
-		rows, err = db.Query("SHOW SLAVE STATUS")
+		rows, err = db.QueryContext(context.Background(), "SHOW SLAVE STATUS")
 	}
 	if err == nil {
 		defer rows.Close()
@@ -304,7 +307,7 @@ func detectReplication(db *sql.DB, info *Info) (bool, error) {
 
 	// Check if this server has replicas (is a primary)
 	var replCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE COMMAND = 'Binlog Dump' OR COMMAND = 'Binlog Dump GTID'").Scan(&replCount)
+	err = db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE COMMAND = 'Binlog Dump' OR COMMAND = 'Binlog Dump GTID'").Scan(&replCount)
 	if err == nil && replCount > 0 {
 		info.IsPrimary = true
 		detected = true

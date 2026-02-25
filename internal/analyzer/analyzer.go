@@ -573,12 +573,13 @@ func analyzeDDL(input Input, result *Result) {
 	}
 
 	// Generate executable command for the primary method, and alternative when both are viable.
-	if result.Method == ExecGhost {
+	switch result.Method {
+	case ExecGhost:
 		result.ExecutionCommand = generateGhostCommand(input)
 		if result.AlternativeMethod == ExecPtOSC {
 			result.AlternativeExecutionCommand = generatePtOSCCommand(input, false)
 		}
-	} else if result.Method == ExecPtOSC {
+	case ExecPtOSC:
 		result.ExecutionCommand = generatePtOSCCommand(input, input.Topo.Type == topology.Galera)
 	}
 
@@ -606,7 +607,8 @@ func analyzeDML(input Input, result *Result) {
 
 	// Determine chunking need
 	const chunkThreshold int64 = 100000 // 100K rows
-	if result.AffectedRows > chunkThreshold {
+	switch {
+	case result.AffectedRows > chunkThreshold:
 		result.Risk = RiskDangerous
 		result.Method = ExecChunked
 		result.ChunkCount = (result.AffectedRows + int64(input.ChunkSize) - 1) / int64(input.ChunkSize)
@@ -614,14 +616,14 @@ func analyzeDML(input Input, result *Result) {
 			"Affecting ~%s rows (%.1f%%). Chunk into batches of %d rows with sleep between chunks to avoid lock contention and replication lag.",
 			formatNumber(result.AffectedRows), result.AffectedPct, input.ChunkSize,
 		)
-	} else if result.AffectedRows > 10000 {
+	case result.AffectedRows > 10000:
 		result.Risk = RiskCaution
 		result.Method = ExecDirect
 		result.Recommendation = fmt.Sprintf(
 			"Affecting ~%s rows (%.1f%%). Moderate impact. Direct execution OK during low-traffic window, but consider chunking if you want to be safe.",
 			formatNumber(result.AffectedRows), result.AffectedPct,
 		)
-	} else {
+	default:
 		if result.Risk == "" {
 			result.Risk = RiskSafe
 		}
@@ -1188,13 +1190,13 @@ func generateChunkedScript(input Input, result *Result) {
 	ts := time.Now().Format("20060102_150405")
 
 	var script strings.Builder
-	script.WriteString(fmt.Sprintf("-- dbsafe generated chunked script\n"))
-	script.WriteString(fmt.Sprintf("-- Table: %s.%s\n", db, table))
-	script.WriteString(fmt.Sprintf("-- Estimated rows: %d\n", result.AffectedRows))
-	script.WriteString(fmt.Sprintf("-- Chunk size: %d\n", input.ChunkSize))
-	script.WriteString(fmt.Sprintf("-- Generated: %s\n\n", time.Now().Format(time.RFC3339)))
+	script.WriteString("-- dbsafe generated chunked script\n")
+	fmt.Fprintf(&script, "-- Table: %s.%s\n", db, table)
+	fmt.Fprintf(&script, "-- Estimated rows: %d\n", result.AffectedRows)
+	fmt.Fprintf(&script, "-- Chunk size: %d\n", input.ChunkSize)
+	fmt.Fprintf(&script, "-- Generated: %s\n\n", time.Now().Format(time.RFC3339))
 
-	script.WriteString("SET @batch_size = " + fmt.Sprintf("%d", input.ChunkSize) + ";\n")
+	fmt.Fprintf(&script, "SET @batch_size = %d;\n", input.ChunkSize)
 	script.WriteString("SET @sleep_time = 0.5;\n\n")
 
 	script.WriteString("-- Loop: execute in batches\n")
@@ -1202,7 +1204,7 @@ func generateChunkedScript(input Input, result *Result) {
 
 	switch input.Parsed.DMLOp {
 	case parser.Delete:
-		script.WriteString(fmt.Sprintf(`
+		fmt.Fprintf(&script, `
 SET @affected = 1;
 WHILE @affected > 0 DO
     DELETE FROM %s.%s
@@ -1214,13 +1216,13 @@ WHILE @affected > 0 DO
     
     DO SLEEP(@sleep_time);
 END WHILE;
-`, "`"+db+"`", "`"+table+"`", input.Parsed.WhereClause))
+`, "`"+db+"`", "`"+table+"`", input.Parsed.WhereClause)
 
 	case parser.Update:
-		script.WriteString(fmt.Sprintf("-- UPDATE chunking requires a primary key column.\n"))
-		script.WriteString(fmt.Sprintf("-- Use the PK to iterate in ranges.\n"))
-		script.WriteString(fmt.Sprintf("-- Example pattern (adjust for your PK column):\n\n"))
-		script.WriteString(fmt.Sprintf(`
+		script.WriteString("-- UPDATE chunking requires a primary key column.\n")
+		script.WriteString("-- Use the PK to iterate in ranges.\n")
+		script.WriteString("-- Example pattern (adjust for your PK column):\n\n")
+		fmt.Fprintf(&script, `
 SET @min_id = (SELECT MIN(id) FROM %s.%s WHERE %s);
 SET @max_id = (SELECT MAX(id) FROM %s.%s WHERE %s);
 SET @current = @min_id;
@@ -1235,7 +1237,7 @@ WHILE @current <= @max_id DO
 END WHILE;
 `, "`"+db+"`", "`"+table+"`", input.Parsed.WhereClause,
 			"`"+db+"`", "`"+table+"`", input.Parsed.WhereClause,
-			input.Parsed.RawSQL))
+			input.Parsed.RawSQL)
 	}
 
 	result.GeneratedScript = script.String()
@@ -1398,18 +1400,18 @@ func generateGhostCommand(input Input) string {
 
 	var cmd strings.Builder
 	cmd.WriteString("gh-ost \\\n")
-	cmd.WriteString(fmt.Sprintf("  --user=\"%s\" \\\n", input.Connection.User))
+	fmt.Fprintf(&cmd, "  --user=\"%s\" \\\n", input.Connection.User)
 
 	if input.Connection.Socket != "" {
-		cmd.WriteString(fmt.Sprintf("  --socket=\"%s\" \\\n", input.Connection.Socket))
+		fmt.Fprintf(&cmd, "  --socket=\"%s\" \\\n", input.Connection.Socket)
 	} else {
-		cmd.WriteString(fmt.Sprintf("  --host=\"%s\" \\\n", input.Connection.Host))
-		cmd.WriteString(fmt.Sprintf("  --port=%d \\\n", input.Connection.Port))
+		fmt.Fprintf(&cmd, "  --host=\"%s\" \\\n", input.Connection.Host)
+		fmt.Fprintf(&cmd, "  --port=%d \\\n", input.Connection.Port)
 	}
 
-	cmd.WriteString(fmt.Sprintf("  --database=\"%s\" \\\n", input.Parsed.Database))
-	cmd.WriteString(fmt.Sprintf("  --table=\"%s\" \\\n", input.Parsed.Table))
-	cmd.WriteString(fmt.Sprintf("  --alter=\"%s\" \\\n", alterSpec))
+	fmt.Fprintf(&cmd, "  --database=\"%s\" \\\n", input.Parsed.Database)
+	fmt.Fprintf(&cmd, "  --table=\"%s\" \\\n", input.Parsed.Table)
+	fmt.Fprintf(&cmd, "  --alter=\"%s\" \\\n", alterSpec)
 	cmd.WriteString("  --assume-rbr \\\n")
 	cmd.WriteString("  --cut-over=default \\\n")
 	cmd.WriteString("  --exact-rowcount \\\n")
@@ -1450,8 +1452,8 @@ func generatePtOSCCommand(input Input, isGalera bool) string {
 	}
 	dsn += fmt.Sprintf(",D=%s,t=%s", database, input.Parsed.Table)
 
-	cmd.WriteString(fmt.Sprintf("  %s \\\n", dsn))
-	cmd.WriteString(fmt.Sprintf("  --alter \"%s\" \\\n", alterSpec))
+	fmt.Fprintf(&cmd, "  %s \\\n", dsn)
+	fmt.Fprintf(&cmd, "  --alter \"%s\" \\\n", alterSpec)
 	cmd.WriteString("  --execute \\\n")
 	cmd.WriteString("  --chunk-size=1000 \\\n")
 	cmd.WriteString("  --chunk-time=0.5 \\\n")

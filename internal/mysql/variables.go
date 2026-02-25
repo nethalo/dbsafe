@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"regexp"
@@ -74,7 +75,7 @@ func (v ServerVersion) SupportsInstantDropColumn() bool {
 // GetServerVersion queries and parses the MySQL server version.
 func GetServerVersion(db *sql.DB) (ServerVersion, error) {
 	var raw string
-	err := db.QueryRow("SELECT VERSION()").Scan(&raw)
+	err := db.QueryRowContext(context.Background(), "SELECT VERSION()").Scan(&raw)
 	if err != nil {
 		return ServerVersion{}, fmt.Errorf("querying version: %w", err)
 	}
@@ -138,17 +139,19 @@ func GetVariable(db *sql.DB, name string) (string, error) {
 	escapedName := strings.ReplaceAll(name, "_", "\\_")
 	escapedName = strings.ReplaceAll(escapedName, "%", "\\%")
 
+	ctx := context.Background()
+
 	// Try with GLOBAL first (most variables)
 	// Note: SHOW commands don't support prepared statements in all MySQL drivers
 	query := fmt.Sprintf("SHOW GLOBAL VARIABLES LIKE '%s'", escapedName)
-	err := db.QueryRow(query).Scan(&varName, &value)
+	err := db.QueryRowContext(ctx, query).Scan(&varName, &value)
 	if err == nil && value.Valid && value.String != "" {
 		return value.String, nil
 	}
 
 	// If GLOBAL didn't work, try without GLOBAL (needed for some wsrep variables)
 	query = fmt.Sprintf("SHOW VARIABLES LIKE '%s'", escapedName)
-	err = db.QueryRow(query).Scan(&varName, &value)
+	err = db.QueryRowContext(ctx, query).Scan(&varName, &value)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil // variable doesn't exist
@@ -174,7 +177,7 @@ func GetStatus(db *sql.DB, name string) (string, error) {
 
 	// Note: SHOW commands don't support prepared statements in all MySQL drivers
 	query := fmt.Sprintf("SHOW GLOBAL STATUS LIKE '%s'", escapedName)
-	err := db.QueryRow(query).Scan(&varName, &value)
+	err := db.QueryRowContext(context.Background(), query).Scan(&varName, &value)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil
@@ -231,7 +234,7 @@ func EstimateRowsAffected(db *sql.DB, sqlText string) (int64, error) {
 		return 0, err
 	}
 
-	rows, err := db.Query("EXPLAIN " + sqlText)
+	rows, err := db.QueryContext(context.Background(), "EXPLAIN "+sqlText)
 	if err != nil {
 		return 0, fmt.Errorf("EXPLAIN failed: %w", err)
 	}

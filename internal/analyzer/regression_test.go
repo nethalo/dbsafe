@@ -30,8 +30,8 @@ type regressionCase struct {
 	wantRisk            RiskLevel
 	wantMethod          ExecutionMethod
 	wantAlternative     ExecutionMethod     // positive: must equal this
-	wantNoAlternative   bool               // true: AlternativeMethod must be ""
-	wantAlgo            Algorithm          // checks result.Classification.Algorithm
+	wantNoAlternative   bool                // true: AlternativeMethod must be ""
+	wantAlgo            Algorithm           // checks result.Classification.Algorithm
 	wantDDLOp           parser.DDLOperation // checks result.DDLOp
 	wantWarningSubstr   []string            // each substr must appear in result.Warnings
 	wantClusterSubstr   []string            // each substr must appear in result.ClusterWarnings
@@ -117,7 +117,7 @@ func TestRegression_FullPipeline(t *testing.T) {
 		large = 2 * 1024 * 1024 * 1024 // 2 GB — triggers online-schema-change tools
 	)
 
-	v8_0_5  := mysql.ServerVersion{Major: 8, Minor: 0, Patch: 5, Flavor: "mysql"}
+	v8_0_5 := mysql.ServerVersion{Major: 8, Minor: 0, Patch: 5, Flavor: "mysql"}
 	v8_0_35 := mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"}
 	vAurora := mysql.ServerVersion{
 		Major: 8, Minor: 0, Patch: 0,
@@ -188,18 +188,18 @@ func TestRegression_FullPipeline(t *testing.T) {
 		// ─────────────────────────────────────────────────────────────────
 
 		{
-			name:    "6. COPY Galera 2GB → PT-OSC only, no gh-ost",
-			sql:     "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
-			version: v8_0_35,
+			name:     "6. COPY Galera 2GB → PT-OSC only, no gh-ost",
+			sql:      "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
+			version:  v8_0_35,
 			topoType: topology.Galera,
 			topoSetup: func(info *topology.Info) {
 				// TOI with cluster size → TOI cluster warning fires for non-INSTANT DDL
 				info.GaleraOSUMethod = "TOI"
 				info.GaleraClusterSize = 3
 			},
-			tableSizeBytes:  large,
-			wantRisk:        RiskDangerous,
-			wantMethod:      ExecPtOSC,
+			tableSizeBytes:    large,
+			wantRisk:          RiskDangerous,
+			wantMethod:        ExecPtOSC,
 			wantNoAlternative: true, // gh-ost must NOT be offered on Galera
 			wantClusterSubstr: []string{"TOI"},
 		},
@@ -214,19 +214,19 @@ func TestRegression_FullPipeline(t *testing.T) {
 		},
 		{
 			// WriteSetSize = 500K rows × 5000 bytes = 2.5 GB > wsrep_max_ws_size (1 GB)
-			name:    "8. DELETE Galera WriteSet exceeds wsrep_max_ws_size → DANGEROUS CHUNKED",
-			sql:     "DELETE FROM orders WHERE id > 0",
-			version: v8_0_35,
+			name:     "8. DELETE Galera WriteSet exceeds wsrep_max_ws_size → DANGEROUS CHUNKED",
+			sql:      "DELETE FROM orders WHERE id > 0",
+			version:  v8_0_35,
 			topoType: topology.Galera,
 			topoSetup: func(info *topology.Info) {
 				info.WsrepMaxWsSize = 1 * 1024 * 1024 * 1024 // 1 GB limit
 			},
-			tableSizeBytes: small,
-			rowCount:       500000,
-			avgRowLen:      5000,
-			estimatedRows:  500000,
-			wantRisk:       RiskDangerous,
-			wantMethod:     ExecChunked,
+			tableSizeBytes:    small,
+			rowCount:          500000,
+			avgRowLen:         5000,
+			estimatedRows:     500000,
+			wantRisk:          RiskDangerous,
+			wantMethod:        ExecChunked,
 			wantClusterSubstr: []string{"wsrep_max_ws_size"},
 		},
 
@@ -260,11 +260,11 @@ func TestRegression_FullPipeline(t *testing.T) {
 			wantAlgo:       AlgoInstant,
 		},
 		{
-			name:           "11. Aurora reader + DDL → read-replica cluster warning",
-			sql:            "ALTER TABLE orders ADD INDEX idx_existing (existing_col)",
-			version:        vAurora,
-			topoType:       topology.AuroraReader,
-			tableSizeBytes: small,
+			name:              "11. Aurora reader + DDL → read-replica cluster warning",
+			sql:               "ALTER TABLE orders ADD INDEX idx_existing (existing_col)",
+			version:           vAurora,
+			topoType:          topology.AuroraReader,
+			tableSizeBytes:    small,
 			wantClusterSubstr: []string{"READ REPLICA"},
 		},
 		{
@@ -285,9 +285,9 @@ func TestRegression_FullPipeline(t *testing.T) {
 		{
 			// gh-ost is recommended (non-Galera, non-Aurora COPY large),
 			// and the RDS advisory adds the --allow-on-master cluster warning.
-			name:    "13. RDS standalone COPY 2GB → GH-OST + --allow-on-master warning",
-			sql:     "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
-			version: v8_0_35,
+			name:     "13. RDS standalone COPY 2GB → GH-OST + --allow-on-master warning",
+			sql:      "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
+			version:  v8_0_35,
 			topoType: topology.Standalone,
 			topoSetup: func(info *topology.Info) {
 				info.IsCloudManaged = true
@@ -301,9 +301,9 @@ func TestRegression_FullPipeline(t *testing.T) {
 		},
 		{
 			// INSTANT uses DIRECT → gh-ost is never selected → no RDS warning.
-			name:    "14. RDS standalone INSTANT small → SAFE DIRECT, no RDS advisory",
-			sql:     "ALTER TABLE orders ADD COLUMN notes TEXT",
-			version: v8_0_35,
+			name:     "14. RDS standalone INSTANT small → SAFE DIRECT, no RDS advisory",
+			sql:      "ALTER TABLE orders ADD COLUMN notes TEXT",
+			version:  v8_0_35,
 			topoType: topology.Standalone,
 			topoSetup: func(info *topology.Info) {
 				info.IsCloudManaged = true
@@ -322,35 +322,35 @@ func TestRegression_FullPipeline(t *testing.T) {
 		{
 			// gh-ost is initially selected (COPY+large+standalone),
 			// then the trigger override switches it to pt-osc.
-			name:    "15. Large table with trigger → PT-OSC only, gh-ost blocked",
-			sql:     "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
-			version: v8_0_35,
+			name:     "15. Large table with trigger → PT-OSC only, gh-ost blocked",
+			sql:      "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
+			version:  v8_0_35,
 			topoType: topology.Standalone,
 			metaSetup: func(m *mysql.TableMetadata) {
 				m.Triggers = []mysql.TriggerInfo{
 					{Name: "trg_audit", Event: "UPDATE", Timing: "AFTER"},
 				}
 			},
-			tableSizeBytes:  large,
-			wantRisk:        RiskDangerous,
-			wantMethod:      ExecPtOSC,
+			tableSizeBytes:    large,
+			wantRisk:          RiskDangerous,
+			wantMethod:        ExecPtOSC,
 			wantNoAlternative: true,
 		},
 		{
 			// Both Aurora and the trigger independently force pt-osc.
 			// Trigger override fires first (in analyzeDDL), Aurora warning confirms result.
-			name:    "16. Aurora writer + trigger + COPY 2GB → PT-OSC",
-			sql:     "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
-			version: vAurora,
+			name:     "16. Aurora writer + trigger + COPY 2GB → PT-OSC",
+			sql:      "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
+			version:  vAurora,
 			topoType: topology.AuroraWriter,
 			metaSetup: func(m *mysql.TableMetadata) {
 				m.Triggers = []mysql.TriggerInfo{
 					{Name: "trg_orders_upd", Event: "UPDATE", Timing: "AFTER"},
 				}
 			},
-			tableSizeBytes:  large,
-			wantRisk:        RiskDangerous,
-			wantMethod:      ExecPtOSC,
+			tableSizeBytes:    large,
+			wantRisk:          RiskDangerous,
+			wantMethod:        ExecPtOSC,
 			wantNoAlternative: true,
 		},
 
@@ -360,56 +360,56 @@ func TestRegression_FullPipeline(t *testing.T) {
 
 		{
 			// HasWhere=true + EstimatedRows=50 → AffectedRows=50 < 10K → SAFE DIRECT.
-			name:          "17. DELETE WHERE small (EXPLAIN=50 rows) → SAFE DIRECT",
-			sql:           "DELETE FROM orders WHERE id > 1000",
-			version:       v8_0_35,
-			topoType:      topology.Standalone,
+			name:           "17. DELETE WHERE small (EXPLAIN=50 rows) → SAFE DIRECT",
+			sql:            "DELETE FROM orders WHERE id > 1000",
+			version:        v8_0_35,
+			topoType:       topology.Standalone,
 			tableSizeBytes: small,
-			rowCount:      100000,
-			estimatedRows: 50,
-			wantRisk:      RiskSafe,
-			wantMethod:    ExecDirect,
+			rowCount:       100000,
+			estimatedRows:  50,
+			wantRisk:       RiskSafe,
+			wantMethod:     ExecDirect,
 		},
 		{
 			// HasWhere=true + EstimatedRows=500K → AffectedRows=500K > 100K → DANGEROUS CHUNKED.
-			name:          "18. DELETE WHERE large (EXPLAIN=500K rows) → DANGEROUS CHUNKED",
-			sql:           "DELETE FROM orders WHERE id > 0",
-			version:       v8_0_35,
-			topoType:      topology.Standalone,
+			name:           "18. DELETE WHERE large (EXPLAIN=500K rows) → DANGEROUS CHUNKED",
+			sql:            "DELETE FROM orders WHERE id > 0",
+			version:        v8_0_35,
+			topoType:       topology.Standalone,
 			tableSizeBytes: small,
-			rowCount:      1000000,
-			estimatedRows: 500000,
-			wantRisk:      RiskDangerous,
-			wantMethod:    ExecChunked,
+			rowCount:       1000000,
+			estimatedRows:  500000,
+			wantRisk:       RiskDangerous,
+			wantMethod:     ExecChunked,
 		},
 		{
 			// HasWhere=false → AffectedRows = all rows (1000) → DANGEROUS + no-WHERE warning.
 			// Table is small (1K rows) → method stays DIRECT (< 10K row threshold).
-			name:           "19. UPDATE without WHERE → DANGEROUS, all-rows warning",
-			sql:            "UPDATE orders SET existing_col = 'archived'",
-			version:        v8_0_35,
-			topoType:       topology.Standalone,
-			tableSizeBytes: small,
-			rowCount:       1000,
-			wantRisk:       RiskDangerous,
+			name:              "19. UPDATE without WHERE → DANGEROUS, all-rows warning",
+			sql:               "UPDATE orders SET existing_col = 'archived'",
+			version:           v8_0_35,
+			topoType:          topology.Standalone,
+			tableSizeBytes:    small,
+			rowCount:          1000,
+			wantRisk:          RiskDangerous,
 			wantWarningSubstr: []string{"No WHERE clause"},
 		},
 		{
 			// Galera: HasWhere=true + EstimatedRows=500K → WriteSetSize=2.5GB > 1GB limit.
 			// Both the row-count threshold and the write-set check push to CHUNKED.
-			name:    "20. DELETE Galera write-set limit exceeded → DANGEROUS CHUNKED",
-			sql:     "DELETE FROM orders WHERE id > 0",
-			version: v8_0_35,
+			name:     "20. DELETE Galera write-set limit exceeded → DANGEROUS CHUNKED",
+			sql:      "DELETE FROM orders WHERE id > 0",
+			version:  v8_0_35,
 			topoType: topology.Galera,
 			topoSetup: func(info *topology.Info) {
 				info.WsrepMaxWsSize = 1 * 1024 * 1024 * 1024 // 1 GB
 			},
-			tableSizeBytes: small,
-			rowCount:       500000,
-			avgRowLen:      5000,
-			estimatedRows:  500000,
-			wantRisk:       RiskDangerous,
-			wantMethod:     ExecChunked,
+			tableSizeBytes:    small,
+			rowCount:          500000,
+			avgRowLen:         5000,
+			estimatedRows:     500000,
+			wantRisk:          RiskDangerous,
+			wantMethod:        ExecChunked,
 			wantClusterSubstr: []string{"wsrep_max_ws_size"},
 		},
 
@@ -418,9 +418,9 @@ func TestRegression_FullPipeline(t *testing.T) {
 		// ─────────────────────────────────────────────────────────────────
 
 		{
-			name:    "21. GR multi-primary + DDL → conflicting-DDL cluster warning",
-			sql:     "ALTER TABLE orders ADD INDEX idx_existing (existing_col)",
-			version: v8_0_35,
+			name:     "21. GR multi-primary + DDL → conflicting-DDL cluster warning",
+			sql:      "ALTER TABLE orders ADD INDEX idx_existing (existing_col)",
+			version:  v8_0_35,
 			topoType: topology.GroupRepl,
 			topoSetup: func(info *topology.Info) {
 				info.GRMode = "MULTI-PRIMARY"
@@ -430,19 +430,19 @@ func TestRegression_FullPipeline(t *testing.T) {
 		},
 		{
 			// GR: WriteSetSize=2.5GB > GRTransactionLimit(1GB) → CHUNKED + cluster warning.
-			name:    "22. GR large DML exceeds transaction limit → DANGEROUS CHUNKED",
-			sql:     "DELETE FROM orders WHERE id > 0",
-			version: v8_0_35,
+			name:     "22. GR large DML exceeds transaction limit → DANGEROUS CHUNKED",
+			sql:      "DELETE FROM orders WHERE id > 0",
+			version:  v8_0_35,
 			topoType: topology.GroupRepl,
 			topoSetup: func(info *topology.Info) {
 				info.GRTransactionLimit = 1 * 1024 * 1024 * 1024 // 1 GB
 			},
-			tableSizeBytes: small,
-			rowCount:       500000,
-			avgRowLen:      5000,
-			estimatedRows:  500000,
-			wantRisk:       RiskDangerous,
-			wantMethod:     ExecChunked,
+			tableSizeBytes:    small,
+			rowCount:          500000,
+			avgRowLen:         5000,
+			estimatedRows:     500000,
+			wantRisk:          RiskDangerous,
+			wantMethod:        ExecChunked,
 			wantClusterSubstr: []string{"group_replication_transaction_size_limit"},
 		},
 
@@ -478,24 +478,24 @@ func TestRegression_FullPipeline(t *testing.T) {
 			// Multi-op ALTER → parser sets DDLOp=MultipleOps.
 			// MULTIPLE_OPS aggregation: ADD COLUMN (INSTANT) + ADD INDEX (INPLACE) → INPLACE.
 			// The "could not be fully parsed" warning is ONLY for OtherDDL, not MultipleOps.
-			name:           "25. Multiple ALTERs → MultipleOps, aggregated INPLACE, no parse-error warning",
-			sql:            "ALTER TABLE orders ADD COLUMN notes TEXT, ADD INDEX idx_notes (notes)",
-			version:        v8_0_35,
-			topoType:       topology.Standalone,
-			tableSizeBytes: small,
-			wantDDLOp:      parser.MultipleOps,
-			wantAlgo:       AlgoInplace, // ADD COLUMN=INSTANT, ADD INDEX=INPLACE → max=INPLACE
+			name:                "25. Multiple ALTERs → MultipleOps, aggregated INPLACE, no parse-error warning",
+			sql:                 "ALTER TABLE orders ADD COLUMN notes TEXT, ADD INDEX idx_notes (notes)",
+			version:             v8_0_35,
+			topoType:            topology.Standalone,
+			tableSizeBytes:      small,
+			wantDDLOp:           parser.MultipleOps,
+			wantAlgo:            AlgoInplace, // ADD COLUMN=INSTANT, ADD INDEX=INPLACE → max=INPLACE
 			wantNoWarningSubstr: []string{"could not be fully parsed"},
 		},
 		{
 			// Column validation: existing_col is already in meta.Columns →
 			// ADD COLUMN existing_col triggers "already exists" warning and DANGEROUS risk.
-			name:           "26. ADD existing column → DANGEROUS + already-exists warning",
-			sql:            "ALTER TABLE orders ADD COLUMN existing_col TEXT",
-			version:        v8_0_35,
-			topoType:       topology.Standalone,
-			tableSizeBytes: small,
-			wantRisk:       RiskDangerous,
+			name:              "26. ADD existing column → DANGEROUS + already-exists warning",
+			sql:               "ALTER TABLE orders ADD COLUMN existing_col TEXT",
+			version:           v8_0_35,
+			topoType:          topology.Standalone,
+			tableSizeBytes:    small,
+			wantRisk:          RiskDangerous,
 			wantWarningSubstr: []string{"already exists"},
 		},
 		{
@@ -527,8 +527,8 @@ func TestRegression_FullPipeline(t *testing.T) {
 		{
 			// MODIFY COLUMN with an explicit charset change (utf8mb3 → utf8mb4):
 			// the charset guard fires and keeps the COPY baseline, adding a specific warning.
-			name: "29. MODIFY COLUMN charset change utf8mb3→utf8mb4 → COPY + charset warning",
-			sql:  "ALTER TABLE orders MODIFY COLUMN existing_col VARCHAR(100) CHARACTER SET utf8mb4",
+			name:           "29. MODIFY COLUMN charset change utf8mb3→utf8mb4 → COPY + charset warning",
+			sql:            "ALTER TABLE orders MODIFY COLUMN existing_col VARCHAR(100) CHARACTER SET utf8mb4",
 			version:        v8_0_35,
 			topoType:       topology.Standalone,
 			tableSizeBytes: small,
@@ -544,8 +544,8 @@ func TestRegression_FullPipeline(t *testing.T) {
 			// MODIFY COLUMN with same charset (utf8mb4) and VARCHAR tier unchanged:
 			// 100×4=400 bytes and 200×4=800 bytes are both in the 2-byte prefix tier (>255),
 			// so classifyModifyColumnVarchar returns INPLACE.
-			name: "30. MODIFY COLUMN same charset VARCHAR expansion → INPLACE",
-			sql:  "ALTER TABLE orders MODIFY COLUMN existing_col VARCHAR(200) CHARACTER SET utf8mb4",
+			name:           "30. MODIFY COLUMN same charset VARCHAR expansion → INPLACE",
+			sql:            "ALTER TABLE orders MODIFY COLUMN existing_col VARCHAR(200) CHARACTER SET utf8mb4",
 			version:        v8_0_35,
 			topoType:       topology.Standalone,
 			tableSizeBytes: small,

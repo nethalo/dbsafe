@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -61,13 +62,13 @@ type TriggerInfo struct {
 
 // ColumnInfo describes a single column in a table.
 type ColumnInfo struct {
-	Name             string
-	Type             string
-	Nullable         bool
-	Default          *string
-	Position         int
-	CharacterSet     *string
-	Collation        *string
+	Name              string
+	Type              string
+	Nullable          bool
+	Default           *string
+	Position          int
+	CharacterSet      *string
+	Collation         *string
 	IsStoredGenerated bool // true when EXTRA contains "STORED GENERATED"
 }
 
@@ -83,14 +84,15 @@ func escapeIdentifier(identifier string) string {
 
 // GetTableMetadata collects comprehensive metadata about a table.
 func GetTableMetadata(db *sql.DB, database, table string) (*TableMetadata, error) {
+	ctx := context.Background()
 	meta := &TableMetadata{
 		Database: database,
 		Table:    table,
 	}
 
 	// Basic table info from information_schema.TABLES
-	err := db.QueryRow(`
-		SELECT 
+	err := db.QueryRowContext(ctx, `
+		SELECT
 			ENGINE,
 			IFNULL(TABLE_ROWS, 0),
 			IFNULL(DATA_LENGTH, 0),
@@ -120,31 +122,31 @@ func GetTableMetadata(db *sql.DB, database, table string) (*TableMetadata, error
 	var tblName, createStmt string
 	// Security: Use escapeIdentifier to prevent SQL injection via database/table names
 	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", escapeIdentifier(database), escapeIdentifier(table))
-	err = db.QueryRow(query).Scan(&tblName, &createStmt)
+	err = db.QueryRowContext(ctx, query).Scan(&tblName, &createStmt)
 	if err == nil {
 		meta.CreateTable = createStmt
 	}
 
 	// Columns
-	meta.Columns, err = getColumns(db, database, table)
+	meta.Columns, err = getColumns(ctx, db, database, table)
 	if err != nil {
 		return nil, fmt.Errorf("querying columns: %w", err)
 	}
 
 	// Indexes
-	meta.Indexes, err = getIndexes(db, database, table)
+	meta.Indexes, err = getIndexes(ctx, db, database, table)
 	if err != nil {
 		return nil, fmt.Errorf("querying indexes: %w", err)
 	}
 
 	// Foreign keys (referencing FROM this table)
-	meta.ForeignKeys, err = getForeignKeys(db, database, table)
+	meta.ForeignKeys, err = getForeignKeys(ctx, db, database, table)
 	if err != nil {
 		return nil, fmt.Errorf("querying foreign keys: %w", err)
 	}
 
 	// Triggers
-	meta.Triggers, err = getTriggers(db, database, table)
+	meta.Triggers, err = getTriggers(ctx, db, database, table)
 	if err != nil {
 		return nil, fmt.Errorf("querying triggers: %w", err)
 	}
@@ -152,9 +154,9 @@ func GetTableMetadata(db *sql.DB, database, table string) (*TableMetadata, error
 	return meta, nil
 }
 
-func getIndexes(db *sql.DB, database, table string) ([]IndexInfo, error) {
-	rows, err := db.Query(`
-		SELECT 
+func getIndexes(ctx context.Context, db *sql.DB, database, table string) ([]IndexInfo, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT
 			INDEX_NAME,
 			COLUMN_NAME,
 			NON_UNIQUE,
@@ -196,9 +198,9 @@ func getIndexes(db *sql.DB, database, table string) ([]IndexInfo, error) {
 	return result, nil
 }
 
-func getForeignKeys(db *sql.DB, database, table string) ([]ForeignKeyInfo, error) {
-	rows, err := db.Query(`
-		SELECT 
+func getForeignKeys(ctx context.Context, db *sql.DB, database, table string) ([]ForeignKeyInfo, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT
 			CONSTRAINT_NAME,
 			COLUMN_NAME,
 			REFERENCED_TABLE_SCHEMA,
@@ -242,9 +244,9 @@ func getForeignKeys(db *sql.DB, database, table string) ([]ForeignKeyInfo, error
 	return result, nil
 }
 
-func getTriggers(db *sql.DB, database, table string) ([]TriggerInfo, error) {
-	rows, err := db.Query(`
-		SELECT 
+func getTriggers(ctx context.Context, db *sql.DB, database, table string) ([]TriggerInfo, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT
 			TRIGGER_NAME,
 			EVENT_MANIPULATION,
 			ACTION_TIMING,
@@ -268,8 +270,8 @@ func getTriggers(db *sql.DB, database, table string) ([]TriggerInfo, error) {
 	return result, nil
 }
 
-func getColumns(db *sql.DB, database, table string) ([]ColumnInfo, error) {
-	rows, err := db.Query(`
+func getColumns(ctx context.Context, db *sql.DB, database, table string) ([]ColumnInfo, error) {
+	rows, err := db.QueryContext(ctx, `
 		SELECT
 			COLUMN_NAME,
 			COLUMN_TYPE,

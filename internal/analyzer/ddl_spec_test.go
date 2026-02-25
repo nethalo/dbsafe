@@ -123,12 +123,12 @@ func TestSpec_3_11_NullabilityChange_NullToNotNull_IsInplace(t *testing.T) {
 	nullable := false // NOT NULL specified
 	input := Input{
 		Parsed: &parser.ParsedSQL{
-			Type:             parser.DDL,
-			RawSQL:           "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) NOT NULL",
-			Table:            "t",
-			DDLOp:            parser.ModifyColumn,
-			ColumnName:       "name",
-			NewColumnType:    "varchar(100)",
+			Type:              parser.DDL,
+			RawSQL:            "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) NOT NULL",
+			Table:             "t",
+			DDLOp:             parser.ModifyColumn,
+			ColumnName:        "name",
+			NewColumnType:     "varchar(100)",
 			NewColumnNullable: &nullable,
 		},
 		Meta: &mysql.TableMetadata{
@@ -160,12 +160,12 @@ func TestSpec_3_12_NullabilityChange_NotNullToNull_IsInplace(t *testing.T) {
 	nullable := true // NULL specified
 	input := Input{
 		Parsed: &parser.ParsedSQL{
-			Type:             parser.DDL,
-			RawSQL:           "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) NULL",
-			Table:            "t",
-			DDLOp:            parser.ModifyColumn,
-			ColumnName:       "name",
-			NewColumnType:    "varchar(100)",
+			Type:              parser.DDL,
+			RawSQL:            "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) NULL",
+			Table:             "t",
+			DDLOp:             parser.ModifyColumn,
+			ColumnName:        "name",
+			NewColumnType:     "varchar(100)",
 			NewColumnNullable: &nullable,
 		},
 		Meta: &mysql.TableMetadata{
@@ -194,12 +194,12 @@ func TestSpec_3_12_NullabilityUnchanged_DoesNotOverride(t *testing.T) {
 	nullable := false
 	input := Input{
 		Parsed: &parser.ParsedSQL{
-			Type:             parser.DDL,
-			RawSQL:           "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) NOT NULL",
-			Table:            "t",
-			DDLOp:            parser.ModifyColumn,
-			ColumnName:       "name",
-			NewColumnType:    "varchar(100)",
+			Type:              parser.DDL,
+			RawSQL:            "ALTER TABLE t MODIFY COLUMN name VARCHAR(100) NOT NULL",
+			Table:             "t",
+			DDLOp:             parser.ModifyColumn,
+			ColumnName:        "name",
+			NewColumnType:     "varchar(100)",
 			NewColumnNullable: &nullable,
 		},
 		Meta: &mysql.TableMetadata{

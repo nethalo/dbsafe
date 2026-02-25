@@ -9,8 +9,6 @@ linters:
   enable:
     - errcheck
     - gocritic
-    - gofmt
-    - gosimple
     - govet
     - ineffassign
     - misspell
@@ -26,6 +24,10 @@ linters:
         linters:
           - errcheck          # unchecked errors are common/acceptable in tests
           - gocritic          # test helpers often have patterns gocritic dislikes
+
+formatters:
+  enable:
+    - gofmt
 
 issues:
   max-issues-per-linter: 0

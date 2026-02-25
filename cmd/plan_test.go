@@ -142,6 +142,7 @@ func TestPlanCmd_Flags(t *testing.T) {
 	chunkSizeFlag := planCmd.Flags().Lookup("chunk-size")
 	if chunkSizeFlag == nil {
 		t.Error("plan command should have --chunk-size flag")
+		return
 	}
 
 	// Verify default chunk size

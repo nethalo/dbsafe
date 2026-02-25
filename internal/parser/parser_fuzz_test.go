@@ -119,9 +119,7 @@ func FuzzParse_ValidDDL(f *testing.F) {
 		// If parsing succeeded and it's DDL, validate structure
 		if err == nil && result != nil && result.Type == DDL {
 			// DDL should have a table name (unless it's RENAME with no tables)
-			if result.Table == "" && result.DDLOp != RenameTable {
-				// This is okay - might be malformed but parsed
-			}
+			// An empty table with a non-RenameTable op is okay — might be malformed but parsed.
 
 			// If it's ADD COLUMN, should have column name
 			if result.DDLOp == AddColumn && result.ColumnName == "" {

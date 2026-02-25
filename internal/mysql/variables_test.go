@@ -9,15 +9,15 @@ import (
 
 func TestParseVersion(t *testing.T) {
 	tests := []struct {
-		name             string
-		raw              string
-		wantMajor        int
-		wantMinor        int
-		wantPatch        int
-		wantFlavor       string
-		wantIsLTS        bool
+		name              string
+		raw               string
+		wantMajor         int
+		wantMinor         int
+		wantPatch         int
+		wantFlavor        string
+		wantIsLTS         bool
 		wantAuroraVersion string
-		wantErr          bool
+		wantErr           bool
 	}{
 		{
 			name:       "MySQL 8.0.35",

@@ -196,7 +196,7 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 
 	enc := json.NewEncoder(r.w)
 	enc.SetIndent("", "  ")
-	enc.Encode(out)
+	_ = enc.Encode(out)
 }
 
 func (r *JSONRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topology.Info) {
@@ -232,5 +232,5 @@ func (r *JSONRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topolog
 
 	enc := json.NewEncoder(r.w)
 	enc.SetIndent("", "  ")
-	enc.Encode(out)
+	_ = enc.Encode(out)
 }

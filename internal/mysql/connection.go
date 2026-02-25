@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -47,7 +48,7 @@ func Connect(cfg ConnectionConfig) (*sql.DB, error) {
 	}
 
 	// Verify the connection actually works
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(context.Background()); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to ping: %w", err)
 	}
@@ -111,7 +112,7 @@ func buildDSN(cfg ConnectionConfig) (string, error) {
 		dsn += "&tls=skip-verify"
 	case "custom":
 		dsn += "&tls=dbsafe-custom"
-	// "" and "disabled" → no TLS param (current behavior)
+		// "" and "disabled" → no TLS param (current behavior)
 	}
 
 	return dsn, nil
@@ -120,7 +121,7 @@ func buildDSN(cfg ConnectionConfig) (string, error) {
 // PromptPassword reads a password from the terminal without echoing.
 func PromptPassword() string {
 	fmt.Print("Enter password: ")
-	password, err := term.ReadPassword(int(syscall.Stdin))
+	password, err := term.ReadPassword(syscall.Stdin)
 	fmt.Println() // newline after hidden input
 	if err != nil {
 		return ""

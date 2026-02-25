@@ -1488,7 +1488,7 @@ func TestChangeColumn_SameName_TypeChange_RequiresCopy(t *testing.T) {
 	input := ddlInput(parser.ChangeColumn, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 0, topology.Standalone)
 	input.Parsed.OldColumnName = "existing_col"
 	input.Parsed.NewColumnName = "existing_col" // same name
-	input.Parsed.NewColumnType = "varchar(255)"  // different from varchar(100)
+	input.Parsed.NewColumnType = "varchar(255)" // different from varchar(100)
 	input.Meta.Columns = []mysql.ColumnInfo{
 		{Name: "id", Type: "int", Position: 1},
 		{Name: "existing_col", Type: "varchar(100)", Position: 2},
@@ -1678,9 +1678,9 @@ func TestModifyColumn_VarcharExpansion_BothInHighTier_IsInplace(t *testing.T) {
 // Unit tests for helper functions
 func TestExtractVarcharLength(t *testing.T) {
 	tests := []struct {
-		input   string
-		wantN   int
-		wantOK  bool
+		input  string
+		wantN  int
+		wantOK bool
 	}{
 		{"varchar(50)", 50, true},
 		{"varchar(255)", 255, true},
@@ -1698,7 +1698,10 @@ func TestExtractVarcharLength(t *testing.T) {
 }
 
 func TestMaxBytesPerChar(t *testing.T) {
-	tests := []struct{ charset string; want int }{
+	tests := []struct {
+		charset string
+		want    int
+	}{
 		{"latin1", 1},
 		{"ascii", 1},
 		{"utf8mb3", 3},

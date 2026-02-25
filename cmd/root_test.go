@@ -25,9 +25,7 @@ func TestInitConfig_FileNotFound(t *testing.T) {
 	initConfig()
 
 	// Should have set defaults
-	if viper.GetInt("defaults.chunk_size") == 0 {
-		// Config not loaded, which is fine - defaults should still work
-	}
+	// If config is not loaded, defaults.chunk_size will be 0 — that's fine.
 }
 
 func TestInitConfig_WithConfigFile(t *testing.T) {

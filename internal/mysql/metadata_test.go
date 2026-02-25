@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
@@ -248,7 +249,7 @@ func TestGetColumns(t *testing.T) {
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
-	cols, err := getColumns(db, "testdb", "users")
+	cols, err := getColumns(context.Background(), db, "testdb", "users")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -304,7 +305,7 @@ func TestGetIndexes(t *testing.T) {
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
-	indexes, err := getIndexes(db, "testdb", "users")
+	indexes, err := getIndexes(context.Background(), db, "testdb", "users")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -359,7 +360,7 @@ func TestGetForeignKeys(t *testing.T) {
 		WithArgs("testdb", "orders").
 		WillReturnRows(rows)
 
-	fks, err := getForeignKeys(db, "testdb", "orders")
+	fks, err := getForeignKeys(context.Background(), db, "testdb", "orders")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -412,7 +413,7 @@ func TestGetTriggers(t *testing.T) {
 		WithArgs("testdb", "users").
 		WillReturnRows(rows)
 
-	triggers, err := getTriggers(db, "testdb", "users")
+	triggers, err := getTriggers(context.Background(), db, "testdb", "users")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

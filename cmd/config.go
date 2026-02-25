@@ -109,18 +109,18 @@ var configInitCmd = &cobra.Command{
 
 		config.WriteString("connections:\n")
 		config.WriteString("  default:\n")
-		config.WriteString(fmt.Sprintf("    host: %s\n", host))
-		config.WriteString(fmt.Sprintf("    port: %s\n", port))
-		config.WriteString(fmt.Sprintf("    user: %s\n", user))
+		fmt.Fprintf(&config, "    host: %s\n", host)
+		fmt.Fprintf(&config, "    port: %s\n", port)
+		fmt.Fprintf(&config, "    user: %s\n", user)
 		config.WriteString("    # password: omitted for security, will prompt\n")
 		if database != "" {
-			config.WriteString(fmt.Sprintf("    database: %s\n", database))
+			fmt.Fprintf(&config, "    database: %s\n", database)
 		}
 
 		config.WriteString("\ndefaults:\n")
 		config.WriteString("  chunk_size: 10000\n")
 		config.WriteString("  chunk_sleep: 0.5\n")
-		config.WriteString(fmt.Sprintf("  format: %s\n", format))
+		fmt.Fprintf(&config, "  format: %s\n", format)
 
 		if err := os.WriteFile(configPath, []byte(config.String()), 0600); err != nil {
 			return fmt.Errorf("writing config: %w", err)
