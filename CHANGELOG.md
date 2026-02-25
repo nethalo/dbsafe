@@ -8,6 +8,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-02-25
+
+### Added
+- CHECK constraint warning: dbsafe now emits a validation query alongside the warning when `ADD CONSTRAINT ... CHECK` is used, so you can verify existing rows before applying the constraint
+
+### Fixed
+- `CHANGE COLUMN` rename-only (same type) now correctly reports `INSTANT` on MySQL ≥8.0.29 (was `INPLACE`; MySQL Bug#33175960)
+- `DROP COLUMN` on indexed columns now correctly reports `INPLACE` on MySQL 8.0.29+
+- ENUM/SET storage boundary edge cases in the DDL matrix corrected
+
+### Changed
+- Code modernization: `interface{}` → `any`, `strings.Cut`, removed obsolete loop variable captures (Go 1.22+)
+- golangci-lint v2 config added; all lint issues resolved
+
 ## [0.4.0] - 2026-02-25
 
 ### Added
