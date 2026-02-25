@@ -113,6 +113,7 @@ type ParsedSQL struct {
 	TablespaceName    string         // for ALTER TABLESPACE
 	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
 	IndexColumns      []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names
+	IsUniqueIndex     bool           // true when ADD UNIQUE KEY/INDEX
 	NewEngine         string         // for ENGINE=<name>: the target engine (lowercased)
 }
 
@@ -402,6 +403,7 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 
 	case *sqlparser.AddIndexDefinition:
 		result.IndexName = opt.IndexDefinition.Info.Name.String()
+		result.IsUniqueIndex = opt.IndexDefinition.Info.Type == sqlparser.IndexTypeUnique
 		// Extract column names so the analyzer can inspect their nullability (needed for ADD PRIMARY KEY).
 		for _, col := range opt.IndexDefinition.Columns {
 			if !col.Column.IsEmpty() {

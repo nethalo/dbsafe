@@ -308,6 +308,111 @@ func TestAnalyzeDDL_AddPrimaryKey_NullableColumn(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDDL_AddPrimaryKey_DuplicateCheckWarning(t *testing.T) {
+	// ADD PRIMARY KEY should always include a duplicate-check query in warnings.
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:         parser.DDL,
+			RawSQL:       "ALTER TABLE t ADD PRIMARY KEY (id)",
+			Table:        "orders",
+			DDLOp:        parser.AddPrimaryKey,
+			IndexColumns: []string{"id"},
+		},
+		Meta:    &mysql.TableMetadata{Table: "orders"},
+		Version: v8_0_35,
+		Topo:    &topology.Info{Type: topology.Standalone},
+	}
+	result := Analyze(input)
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "SELECT id, COUNT(*) cnt FROM orders GROUP BY id HAVING cnt > 1") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected duplicate-check SELECT in warnings, got: %v", result.Warnings)
+	}
+}
+
+func TestAnalyzeDDL_AddUniqueKey_DuplicateCheckWarning(t *testing.T) {
+	// ADD UNIQUE KEY should include a duplicate-check query in warnings.
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:          parser.DDL,
+			RawSQL:        "ALTER TABLE t ADD UNIQUE KEY uk_email (email)",
+			Table:         "users",
+			DDLOp:         parser.AddIndex,
+			IsUniqueIndex: true,
+			IndexColumns:  []string{"email"},
+		},
+		Meta:    &mysql.TableMetadata{Table: "users"},
+		Version: v8_0_35,
+		Topo:    &topology.Info{Type: topology.Standalone},
+	}
+	result := Analyze(input)
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "SELECT email, COUNT(*) cnt FROM users GROUP BY email HAVING cnt > 1") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected duplicate-check SELECT in warnings, got: %v", result.Warnings)
+	}
+}
+
+func TestAnalyzeDDL_AddUniqueKey_Composite_DuplicateCheckWarning(t *testing.T) {
+	// Composite unique key: SELECT should include all columns.
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:          parser.DDL,
+			RawSQL:        "ALTER TABLE t ADD UNIQUE KEY uk_name (first_name, last_name)",
+			Table:         "customers",
+			DDLOp:         parser.AddIndex,
+			IsUniqueIndex: true,
+			IndexColumns:  []string{"first_name", "last_name"},
+		},
+		Meta:    &mysql.TableMetadata{Table: "customers"},
+		Version: v8_0_35,
+		Topo:    &topology.Info{Type: topology.Standalone},
+	}
+	result := Analyze(input)
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "SELECT first_name, last_name, COUNT(*) cnt FROM customers GROUP BY first_name, last_name HAVING cnt > 1") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected composite duplicate-check SELECT in warnings, got: %v", result.Warnings)
+	}
+}
+
+func TestAnalyzeDDL_AddIndex_NonUnique_NoDuplicateCheckWarning(t *testing.T) {
+	// Regular (non-unique) ADD INDEX should NOT get a duplicate-check warning.
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:         parser.DDL,
+			RawSQL:       "ALTER TABLE t ADD INDEX idx_status (status)",
+			Table:        "orders",
+			DDLOp:        parser.AddIndex,
+			IndexColumns: []string{"status"},
+		},
+		Meta:    &mysql.TableMetadata{Table: "orders"},
+		Version: v8_0_35,
+		Topo:    &topology.Info{Type: topology.Standalone},
+	}
+	result := Analyze(input)
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "GROUP BY") {
+			t.Errorf("non-unique index should not get duplicate-check warning, got: %s", w)
+		}
+	}
+}
+
 func TestClassifyDDL_DropPrimaryKey(t *testing.T) {
 	// All versions: COPY + SHARED + table rebuild
 	for _, v := range []mysql.ServerVersion{v8_0_5, v8_0_20, v8_0_35, v8_4_0} {

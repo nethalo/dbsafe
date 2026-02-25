@@ -328,6 +328,18 @@ func analyzeDDL(input Input, result *Result) {
 		}
 	}
 
+	// For ADD UNIQUE KEY or ADD PRIMARY KEY: suggest a pre-flight duplicate-check query.
+	// If duplicates exist, the ALTER will fail with "Duplicate entry". Running the SELECT
+	// lets the user discover and resolve duplicates before attempting the ALTER.
+	if (input.Parsed.DDLOp == parser.AddPrimaryKey || (input.Parsed.DDLOp == parser.AddIndex && input.Parsed.IsUniqueIndex)) &&
+		len(input.Parsed.IndexColumns) > 0 {
+		cols := strings.Join(input.Parsed.IndexColumns, ", ")
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"This ALTER will fail if duplicates exist. Verify with:\n  SELECT %s, COUNT(*) cnt FROM %s GROUP BY %s HAVING cnt > 1 LIMIT 5;",
+			cols, input.Parsed.Table, cols,
+		))
+	}
+
 	// For ADD COLUMN with AUTO_INCREMENT: requires INPLACE with SHARED lock minimum and
 	// full table rebuild. Concurrent DML is not permitted (MySQL 8.0 Table 17.18).
 	if input.Parsed.DDLOp == parser.AddColumn && input.Parsed.HasAutoIncrement {

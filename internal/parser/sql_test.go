@@ -553,6 +553,45 @@ func TestParse_AlterTableAddPrimaryKey_MultiCol(t *testing.T) {
 	}
 }
 
+func TestParse_AlterTableAddUniqueKey_IsUniqueIndex(t *testing.T) {
+	result, err := Parse("ALTER TABLE users ADD UNIQUE KEY uk_email (email)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddIndex {
+		t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddIndex)
+	}
+	if !result.IsUniqueIndex {
+		t.Error("IsUniqueIndex = false, want true for UNIQUE KEY")
+	}
+	if len(result.IndexColumns) != 1 || result.IndexColumns[0] != "email" {
+		t.Errorf("IndexColumns = %v, want [email]", result.IndexColumns)
+	}
+}
+
+func TestParse_AlterTableAddUniqueKey_Composite(t *testing.T) {
+	result, err := Parse("ALTER TABLE orders ADD UNIQUE KEY uk_name (first_name, last_name)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsUniqueIndex {
+		t.Error("IsUniqueIndex = false, want true")
+	}
+	if len(result.IndexColumns) != 2 || result.IndexColumns[0] != "first_name" || result.IndexColumns[1] != "last_name" {
+		t.Errorf("IndexColumns = %v, want [first_name last_name]", result.IndexColumns)
+	}
+}
+
+func TestParse_AlterTableAddIndex_NotUnique(t *testing.T) {
+	result, err := Parse("ALTER TABLE events ADD INDEX idx_created (created_at)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsUniqueIndex {
+		t.Error("IsUniqueIndex = true, want false for non-UNIQUE index")
+	}
+}
+
 func TestParse_AlterTableChangeEngine(t *testing.T) {
 	result, err := Parse("ALTER TABLE t ENGINE = InnoDB")
 	if err != nil {
