@@ -24,6 +24,7 @@
 - ☁️ **AWS MySQL ready** — Aurora MySQL, Amazon RDS (TLS support)
 - 📊 **Impact estimation** — table size, row count, replication lag
 - 📝 **Chunked scripts** — auto-generated batched DELETE/UPDATE for large operations
+- 🔁 **Idempotent wrappers** — `--idempotent` generates a stored procedure with `IF NOT EXISTS` guards, safe to re-run
 - 🎨 **Multiple formats** — text, plain, JSON, Markdown (great for CI/CD)
 - ⚡ **Read-only** — never modifies your data
 
@@ -75,6 +76,9 @@ dbsafe plan "DELETE FROM logs WHERE created_at < '2023-01-01'"
 
 # JSON output for CI/CD
 dbsafe plan --format json "ALTER TABLE users DROP COLUMN legacy_field" | jq .
+
+# Idempotent wrapper — safe to re-run; outputs a stored procedure with IF NOT EXISTS guard
+dbsafe plan --idempotent "ALTER TABLE orders ADD COLUMN email VARCHAR(255)"
 
 # From a file
 dbsafe plan --file migration.sql

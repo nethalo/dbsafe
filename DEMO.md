@@ -57,6 +57,9 @@ CONN="-H 127.0.0.1 -P 23306 -u dbsafe -d demo"
 # JSON output (for CI/CD pipelines)
 ./dbsafe plan $CONN --format json "ALTER TABLE orders MODIFY COLUMN total_amount DECIMAL(14,4)"
 
+# Idempotent SP wrapper — outputs a stored procedure safe to re-run
+./dbsafe plan $CONN --idempotent "ALTER TABLE customers ADD COLUMN notes TEXT"
+
 # Topology info
 ./dbsafe connect $CONN
 ```

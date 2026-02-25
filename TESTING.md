@@ -4,9 +4,9 @@ Complete guide to testing dbsafe - from quick unit tests to comprehensive integr
 
 ## ✅ Status: All Tests Passing
 
-**Last verified**: 2026-02-22
+**Last verified**: 2026-02-25
 
-- ✅ **Unit Tests**: All passing (96.6% parser, 94.9% analyzer, 93.0% topology, 85.5% mysql)
+- ✅ **Unit Tests**: All passing (97.5% parser, 90.8% analyzer, 92.9% topology, 85.0% mysql)
 - ✅ **Integration Tests**: Verified working with MySQL 8.0 and MySQL 8.4 LTS containers
 - ✅ **Benchmarks**: 28 benchmarks tracking performance
 - ✅ **Fuzz Tests**: 7 fuzz functions with 50+ seed cases
@@ -245,15 +245,15 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
-### Current Coverage (as of 2026-02-15)
+### Current Coverage (as of 2026-02-25)
 
 | Package | Coverage | Status |
 |---------|----------|--------|
-| internal/analyzer | 94.9% | ✅ Excellent |
-| internal/parser | 96.6% | ✅ Excellent |
-| internal/topology | 93.0% | ✅ Excellent |
-| internal/mysql | 85.5% | ✅ Good |
-| internal/output | 79.3% | ⚠️ Good |
+| internal/analyzer | 90.8% | ✅ Excellent |
+| internal/parser | 97.5% | ✅ Excellent |
+| internal/topology | 92.9% | ✅ Excellent |
+| internal/mysql | 85.0% | ✅ Good |
+| internal/output | 67.3% | ⚠️ Good |
 
 ---
 
