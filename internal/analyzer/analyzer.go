@@ -396,6 +396,35 @@ func analyzeDDL(input Input, result *Result) {
 				break
 			}
 		}
+
+		// On 8.0.29+ the matrix baseline is INSTANT for DROP COLUMN, but MySQL cannot
+		// use INSTANT when the column participates in any index — it falls back to INPLACE
+		// with a full table rebuild. Check all indexes for the dropped column name.
+		if result.Classification.Algorithm == AlgoInstant {
+			found := false
+			for _, idx := range input.Meta.Indexes {
+				if found {
+					break
+				}
+				for _, idxCol := range idx.Columns {
+					if strings.EqualFold(idxCol, input.Parsed.ColumnName) {
+						result.Classification = DDLClassification{
+							Algorithm:     AlgoInplace,
+							Lock:          LockNone,
+							RebuildsTable: true,
+							Notes: fmt.Sprintf(
+								"DROP COLUMN on indexed column: INPLACE with table rebuild. Column '%s' is part of index '%s'; MySQL cannot use INSTANT for indexed columns. Concurrent DML allowed.",
+								input.Parsed.ColumnName, idx.Name),
+						}
+						result.Warnings = append(result.Warnings, fmt.Sprintf(
+							"Column '%s' is part of index '%s'. Consider dropping the index first if you want a faster operation.",
+							input.Parsed.ColumnName, idx.Name))
+						found = true
+						break
+					}
+				}
+			}
+		}
 	}
 
 	// For MULTIPLE_OPS: classify each sub-operation individually and return the most
@@ -855,6 +884,22 @@ func classifyModifyColumnEnum(oldType, newType string) (DDLClassification, bool)
 	// The old members must appear in the same order at the start of the new list.
 	for i, m := range oldMembers {
 		if !strings.EqualFold(m, newMembers[i]) {
+			return DDLClassification{}, false
+		}
+	}
+
+	// Check whether the append crosses a storage-size boundary.
+	// ENUM: 1 byte for ≤255 members, 2 bytes for >255. Crossing requires a COPY.
+	// SET: 1 byte per 8 members (bitmask). (oldCount+7)/8 bytes → if byte count changes, COPY.
+	s := strings.TrimSpace(strings.ToLower(oldType))
+	oldCount, newCount := len(oldMembers), len(newMembers)
+	if strings.HasPrefix(s, "enum(") {
+		if oldCount <= 255 && newCount > 255 {
+			return DDLClassification{}, false
+		}
+	} else {
+		// SET: storage in bytes = ceil(count/8)
+		if (oldCount+7)/8 != (newCount+7)/8 {
 			return DDLClassification{}, false
 		}
 	}

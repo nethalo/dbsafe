@@ -4,6 +4,7 @@ package analyzer
 // Tests are organized by spec section and reference the spec item number (e.g. "3.6").
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -311,6 +312,160 @@ func TestSpec_3_13_EnumRemoveMember_IsCopy(t *testing.T) {
 
 	if result.Classification.Algorithm == AlgoInstant {
 		t.Error("ENUM with removed member should NOT be INSTANT")
+	}
+}
+
+// 3.14 DROP COLUMN on an indexed column — INPLACE with table rebuild (8.0.29+).
+// MySQL cannot use INSTANT when the dropped column is part of any index.
+func TestSpec_3_14_DropColumn_IndexedColumn_IsInplace(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:       parser.DDL,
+			RawSQL:     "ALTER TABLE orders DROP COLUMN status",
+			Table:      "orders",
+			DDLOp:      parser.DropColumn,
+			ColumnName: "status",
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "orders",
+			Columns: []mysql.ColumnInfo{
+				{Name: "id", Type: "int", Position: 1},
+				{Name: "status", Type: "varchar(20)", Position: 2},
+			},
+			Indexes: []mysql.IndexInfo{
+				{Name: "idx_status", Columns: []string{"status"}, NonUnique: true, Type: "BTREE"},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("DROP COLUMN on indexed column: Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if !result.Classification.RebuildsTable {
+		t.Error("DROP COLUMN on indexed column: RebuildsTable = false, want true")
+	}
+	// A warning should mention the index name.
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "idx_status") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("DROP COLUMN on indexed column: expected warning mentioning index name 'idx_status', got %v", result.Warnings)
+	}
+}
+
+// 3.14b DROP COLUMN on a non-indexed column — INSTANT (8.0.29+, regression).
+func TestSpec_3_14b_DropColumn_NonIndexedColumn_IsInstant(t *testing.T) {
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:       parser.DDL,
+			RawSQL:     "ALTER TABLE orders DROP COLUMN notes",
+			Table:      "orders",
+			DDLOp:      parser.DropColumn,
+			ColumnName: "notes",
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "orders",
+			Columns: []mysql.ColumnInfo{
+				{Name: "id", Type: "int", Position: 1},
+				{Name: "status", Type: "varchar(20)", Position: 2},
+				{Name: "notes", Type: "text", Position: 3},
+			},
+			Indexes: []mysql.IndexInfo{
+				{Name: "idx_status", Columns: []string{"status"}, NonUnique: true, Type: "BTREE"},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInstant {
+		t.Errorf("DROP COLUMN on non-indexed column: Algorithm = %q, want INSTANT", result.Classification.Algorithm)
+	}
+	if result.Classification.RebuildsTable {
+		t.Error("DROP COLUMN on non-indexed column: RebuildsTable = true, want false")
+	}
+}
+
+// 3.13b ENUM storage-boundary crossing (255→256 members) — NOT INSTANT (COPY).
+// ENUM uses 1 byte for ≤255 members and 2 bytes for >255; crossing the boundary
+// changes the on-disk row format and requires a full COPY.
+func TestSpec_3_13b_EnumStorageBoundaryCrossing_IsCopy(t *testing.T) {
+	// Build an enum with 255 members: 'v1','v2',...,'v255'
+	var oldMembers, newMembers []string
+	for i := 1; i <= 255; i++ {
+		oldMembers = append(oldMembers, fmt.Sprintf("'v%d'", i))
+	}
+	newMembers = append(newMembers, oldMembers...)
+	newMembers = append(newMembers, "'v256'")
+
+	oldType := "enum(" + strings.Join(oldMembers, ",") + ")"
+	newType := "enum(" + strings.Join(newMembers, ",") + ")"
+
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:          parser.DDL,
+			RawSQL:        "ALTER TABLE t MODIFY COLUMN flag " + newType,
+			Table:         "t",
+			DDLOp:         parser.ModifyColumn,
+			ColumnName:    "flag",
+			NewColumnType: newType,
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "t",
+			Columns: []mysql.ColumnInfo{
+				{Name: "flag", Type: oldType, Position: 1},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm == AlgoInstant {
+		t.Error("ENUM 255→256 members (storage boundary): should NOT be INSTANT")
+	}
+}
+
+// 3.13c SET storage-boundary crossing (8→9 members) — NOT INSTANT (COPY).
+// SET uses 1 byte per 8 members (bitmask); crossing from 8 to 9 requires 2 bytes.
+func TestSpec_3_13c_SetStorageBoundaryCrossing_IsCopy(t *testing.T) {
+	oldType := "set('a','b','c','d','e','f','g','h')"           // 8 members → 1 byte
+	newType := "set('a','b','c','d','e','f','g','h','i')"       // 9 members → 2 bytes
+
+	input := Input{
+		Parsed: &parser.ParsedSQL{
+			Type:          parser.DDL,
+			RawSQL:        "ALTER TABLE t MODIFY COLUMN flags " + newType,
+			Table:         "t",
+			DDLOp:         parser.ModifyColumn,
+			ColumnName:    "flags",
+			NewColumnType: newType,
+		},
+		Meta: &mysql.TableMetadata{
+			Database: "testdb",
+			Table:    "t",
+			Columns: []mysql.ColumnInfo{
+				{Name: "flags", Type: oldType, Position: 1},
+			},
+		},
+		Version: v8_0_35,
+		Topo:    standaloneInfo(),
+	}
+	result := Analyze(input)
+
+	if result.Classification.Algorithm == AlgoInstant {
+		t.Error("SET 8→9 members (storage boundary): should NOT be INSTANT")
 	}
 }
 
