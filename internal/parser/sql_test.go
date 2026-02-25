@@ -1407,3 +1407,29 @@ func TestParse_AlterTablespace(t *testing.T) {
 		t.Errorf("Table = %q, want empty", result.Table)
 	}
 }
+
+func TestParse_AddForeignKey_ExtractsIndexName(t *testing.T) {
+	result, err := Parse("ALTER TABLE order_items ADD CONSTRAINT fk_order FOREIGN KEY (order_id) REFERENCES orders(id)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != AddForeignKey {
+		t.Errorf("DDLOp = %q, want AddForeignKey", result.DDLOp)
+	}
+	if result.IndexName != "fk_order" {
+		t.Errorf("IndexName = %q, want fk_order", result.IndexName)
+	}
+}
+
+func TestParse_RenameIndex_ExtractsOldIndexName(t *testing.T) {
+	result, err := Parse("ALTER TABLE users RENAME INDEX idx_old TO idx_new")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != RenameIndex {
+		t.Errorf("DDLOp = %q, want RenameIndex", result.DDLOp)
+	}
+	if result.IndexName != "idx_old" {
+		t.Errorf("IndexName = %q, want idx_old", result.IndexName)
+	}
+}

@@ -414,6 +414,12 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 	case *sqlparser.DropKey:
 		result.IndexName = opt.Name.String()
 
+	case *sqlparser.AddConstraintDefinition:
+		result.IndexName = opt.ConstraintDefinition.Name.String()
+
+	case *sqlparser.RenameIndex:
+		result.IndexName = opt.OldName.String()
+
 	case sqlparser.TableOptions:
 		// Extract the target engine name for ENGINE= changes (used to detect same-engine rebuilds).
 		for _, tableOpt := range opt {

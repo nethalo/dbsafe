@@ -85,6 +85,11 @@ func (r *TextRenderer) RenderPlan(result *analyzer.Result) {
 	// Rollback box
 	r.renderRollback(result, width)
 
+	// Idempotent stored procedure
+	if result.IdempotentSP != "" {
+		r.renderIdempotentSP(result, width)
+	}
+
 	// Script generated note
 	if result.GeneratedScript != "" {
 		note := MutedText.Render(fmt.Sprintf("Chunked script written to: %s", result.ScriptPath))
@@ -254,6 +259,14 @@ func (r *TextRenderer) renderRollback(result *analyzer.Result, width int) {
 
 	rollbackBox := BoxStyle.Width(width).Render(content.String())
 	fmt.Fprintln(r.w, rollbackBox)
+}
+
+func (r *TextRenderer) renderIdempotentSP(result *analyzer.Result, width int) {
+	title := TitleStyle.Render("Idempotent Procedure")
+	note := MutedText.Render("Run this instead of the raw DDL to make it safe to re-execute:")
+	content := title + "\n" + note + "\n\n" + CodeStyle.Render(result.IdempotentSP)
+	box := BoxStyle.Width(width).Render(content)
+	fmt.Fprintln(r.w, box)
 }
 
 func (r *TextRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topology.Info) {

@@ -158,6 +158,15 @@ var planCmd = &cobra.Command{
 			},
 		})
 
+		// Generate idempotent stored procedure wrapper if requested
+		if idempotent, _ := cmd.Flags().GetBool("idempotent"); idempotent && result.StatementType == parser.DDL {
+			sp, warn := analyzer.GenerateIdempotentSP(parsed, result.Database, result.Table)
+			result.IdempotentSP = sp
+			if warn != "" {
+				result.Warnings = append(result.Warnings, warn)
+			}
+		}
+
 		// Render output
 		format := viper.GetString("format")
 		renderer := output.NewRenderer(format, os.Stdout)
@@ -182,6 +191,7 @@ func init() {
 	rootCmd.AddCommand(planCmd)
 	planCmd.Flags().String("file", "", "Read SQL from file instead of argument")
 	planCmd.Flags().Int("chunk-size", 10000, "Override default chunk size for DML recommendations")
+	planCmd.Flags().Bool("idempotent", false, "Generate an idempotent stored procedure wrapper for the DDL")
 }
 
 // validateSQLFilePath checks if the file path is safe to read.

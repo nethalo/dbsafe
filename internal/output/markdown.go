@@ -151,6 +151,13 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 	if result.GeneratedScript != "" {
 		fmt.Fprintf(r.w, "---\n\n*Chunked script written to: `%s`*\n", result.ScriptPath)
 	}
+
+	// Idempotent stored procedure
+	if result.IdempotentSP != "" {
+		fmt.Fprintf(r.w, "\n## Idempotent Procedure\n\n")
+		fmt.Fprintf(r.w, "Run this instead of the raw DDL to make it safe to re-execute:\n\n")
+		fmt.Fprintf(r.w, "```sql\n%s\n```\n", result.IdempotentSP)
+	}
 }
 
 func (r *MarkdownRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topology.Info) {

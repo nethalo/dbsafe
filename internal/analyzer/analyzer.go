@@ -123,6 +123,9 @@ type Result struct {
 	ScriptPath      string
 	ChunkSize       int
 	ChunkCount      int64
+
+	// Idempotent stored procedure (when --idempotent is set)
+	IdempotentSP string
 }
 
 // RollbackOption describes one way to undo the operation.

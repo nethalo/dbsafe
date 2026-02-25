@@ -117,6 +117,12 @@ func (r *PlainRenderer) RenderPlan(result *analyzer.Result) {
 	if result.GeneratedScript != "" {
 		fmt.Fprintf(r.w, "\nScript written to: %s\n", result.ScriptPath)
 	}
+
+	// Idempotent stored procedure
+	if result.IdempotentSP != "" {
+		fmt.Fprintf(r.w, "\n--- Idempotent Procedure ---\n")
+		fmt.Fprintf(r.w, "%s\n", result.IdempotentSP)
+	}
 }
 
 func (r *PlainRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topology.Info) {

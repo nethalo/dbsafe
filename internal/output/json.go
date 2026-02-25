@@ -37,6 +37,7 @@ type jsonPlanOutput struct {
 	Rollback                    jsonRollback      `json:"rollback"`
 	Script                      *jsonScript       `json:"generated_script,omitempty"`
 	DiskEstimate                *jsonDiskEstimate `json:"disk_space_estimate,omitempty"`
+	IdempotentProcedure         string            `json:"idempotent_procedure,omitempty"`
 }
 
 type jsonTableMeta struct {
@@ -187,6 +188,10 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 			RequiredHuman: result.DiskEstimate.RequiredHuman,
 			Reason:        result.DiskEstimate.Reason,
 		}
+	}
+
+	if result.IdempotentSP != "" {
+		out.IdempotentProcedure = result.IdempotentSP
 	}
 
 	enc := json.NewEncoder(r.w)
