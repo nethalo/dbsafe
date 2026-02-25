@@ -404,7 +404,7 @@ func TestJSONRenderer_RenderPlan_DDL(t *testing.T) {
 	r := &JSONRenderer{w: &buf}
 	r.RenderPlan(ddlResult())
 
-	var out map[string]interface{}
+	var out map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -425,7 +425,7 @@ func TestJSONRenderer_RenderPlan_DDL(t *testing.T) {
 		t.Errorf("recommended_method = %v, want DIRECT", out["recommended_method"])
 	}
 
-	op := out["operation"].(map[string]interface{})
+	op := out["operation"].(map[string]any)
 	if op["algorithm"] != "INSTANT" {
 		t.Errorf("operation.algorithm = %v, want INSTANT", op["algorithm"])
 	}
@@ -436,7 +436,7 @@ func TestJSONRenderer_RenderPlan_DDL(t *testing.T) {
 		t.Errorf("operation.rebuilds_table = %v, want false", op["rebuilds_table"])
 	}
 
-	meta := out["table_metadata"].(map[string]interface{})
+	meta := out["table_metadata"].(map[string]any)
 	if meta["engine"] != "InnoDB" {
 		t.Errorf("table_metadata.engine = %v, want InnoDB", meta["engine"])
 	}
@@ -444,7 +444,7 @@ func TestJSONRenderer_RenderPlan_DDL(t *testing.T) {
 		t.Errorf("table_metadata.index_count = %v, want 2", meta["index_count"])
 	}
 
-	rollback := out["rollback"].(map[string]interface{})
+	rollback := out["rollback"].(map[string]any)
 	if rollback["sql"] == nil || rollback["sql"] == "" {
 		t.Error("rollback.sql should not be empty")
 	}
@@ -455,7 +455,7 @@ func TestJSONRenderer_RenderPlan_DML(t *testing.T) {
 	r := &JSONRenderer{w: &buf}
 	r.RenderPlan(dmlResult())
 
-	var out map[string]interface{}
+	var out map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestJSONRenderer_RenderPlan_DML(t *testing.T) {
 		t.Errorf("recommended_method = %v, want CHUNKED", out["recommended_method"])
 	}
 
-	op := out["operation"].(map[string]interface{})
+	op := out["operation"].(map[string]any)
 	if op["dml_operation"] != "DELETE" {
 		t.Errorf("operation.dml_operation = %v, want DELETE", op["dml_operation"])
 	}
@@ -478,8 +478,8 @@ func TestJSONRenderer_RenderPlan_DML(t *testing.T) {
 		t.Errorf("operation.chunk_count = %v, want 20", op["chunk_count"])
 	}
 
-	rollback := out["rollback"].(map[string]interface{})
-	options := rollback["options"].([]interface{})
+	rollback := out["rollback"].(map[string]any)
+	options := rollback["options"].([]any)
 	if len(options) != 2 {
 		t.Errorf("rollback.options length = %d, want 2", len(options))
 	}
@@ -490,16 +490,16 @@ func TestJSONRenderer_RenderPlan_Warnings(t *testing.T) {
 	r := &JSONRenderer{w: &buf}
 	r.RenderPlan(dmlResultWithWarnings())
 
-	var out map[string]interface{}
+	var out map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	warnings := out["warnings"].([]interface{})
+	warnings := out["warnings"].([]any)
 	if len(warnings) != 1 {
 		t.Errorf("warnings length = %d, want 1", len(warnings))
 	}
-	clusterWarnings := out["cluster_warnings"].([]interface{})
+	clusterWarnings := out["cluster_warnings"].([]any)
 	if len(clusterWarnings) != 1 {
 		t.Errorf("cluster_warnings length = %d, want 1", len(clusterWarnings))
 	}
@@ -510,7 +510,7 @@ func TestJSONRenderer_RenderPlan_NoWarningsOmitted(t *testing.T) {
 	r := &JSONRenderer{w: &buf}
 	r.RenderPlan(ddlResult()) // no warnings
 
-	var out map[string]interface{}
+	var out map[string]any
 	json.Unmarshal(buf.Bytes(), &out)
 
 	// warnings and cluster_warnings should be omitted (omitempty)
@@ -530,10 +530,10 @@ func TestJSONRenderer_RenderPlan_ScriptPath(t *testing.T) {
 	result.ScriptPath = "./dbsafe-plan-logs-delete.sql"
 	r.RenderPlan(result)
 
-	var out map[string]interface{}
+	var out map[string]any
 	json.Unmarshal(buf.Bytes(), &out)
 
-	script := out["generated_script"].(map[string]interface{})
+	script := out["generated_script"].(map[string]any)
 	if script["path"] != "./dbsafe-plan-logs-delete.sql" {
 		t.Errorf("script.path = %v, want ./dbsafe-plan-logs-delete.sql", script["path"])
 	}
@@ -545,7 +545,7 @@ func TestJSONRenderer_RenderPlan_NoScriptOmitted(t *testing.T) {
 	result := ddlResult()
 	r.RenderPlan(result)
 
-	var out map[string]interface{}
+	var out map[string]any
 	json.Unmarshal(buf.Bytes(), &out)
 
 	if _, ok := out["generated_script"]; ok {
@@ -558,10 +558,10 @@ func TestJSONRenderer_RenderPlan_GaleraTopology(t *testing.T) {
 	r := &JSONRenderer{w: &buf}
 	r.RenderPlan(galeraResult())
 
-	var out map[string]interface{}
+	var out map[string]any
 	json.Unmarshal(buf.Bytes(), &out)
 
-	topo := out["topology"].(map[string]interface{})
+	topo := out["topology"].(map[string]any)
 	if topo["type"] != "galera" {
 		t.Errorf("topology.type = %v, want galera", topo["type"])
 	}
@@ -578,12 +578,12 @@ func TestJSONRenderer_RenderPlan_DiskEstimate_Shown(t *testing.T) {
 	r := &JSONRenderer{w: &buf}
 	r.RenderPlan(ddlResultWithDiskEstimate())
 
-	var out map[string]interface{}
+	var out map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	disk, ok := out["disk_space_estimate"].(map[string]interface{})
+	disk, ok := out["disk_space_estimate"].(map[string]any)
 	if !ok {
 		t.Fatal("disk_space_estimate key missing or wrong type in JSON output")
 	}
@@ -603,7 +603,7 @@ func TestJSONRenderer_RenderPlan_DiskEstimate_OmittedWhenNil(t *testing.T) {
 	r := &JSONRenderer{w: &buf}
 	r.RenderPlan(ddlResult()) // INSTANT, DiskEstimate is nil
 
-	var out map[string]interface{}
+	var out map[string]any
 	json.Unmarshal(buf.Bytes(), &out)
 
 	if _, ok := out["disk_space_estimate"]; ok {
@@ -629,7 +629,7 @@ func TestJSONRenderer_RenderTopology(t *testing.T) {
 	r := &JSONRenderer{w: &buf}
 	r.RenderTopology(sampleConn(), sampleTopo())
 
-	var out map[string]interface{}
+	var out map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -659,7 +659,7 @@ func TestJSONRenderer_RenderTopology_Galera(t *testing.T) {
 	}
 	r.RenderTopology(sampleConn(), topo)
 
-	var out map[string]interface{}
+	var out map[string]any
 	json.Unmarshal(buf.Bytes(), &out)
 
 	if out["cluster_size"] != float64(3) {
