@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-25
+
+### Added
+- `--idempotent` flag on the `plan` command: generates a disposable stored procedure that wraps the DDL in an `INFORMATION_SCHEMA` existence check, making it safe to re-run without error. Supported operations: `ADD/DROP/MODIFY/CHANGE COLUMN`, `ADD/DROP INDEX`, `ADD/DROP PRIMARY KEY`, `RENAME INDEX`, `ADD/DROP FOREIGN KEY`, `CHANGE ENGINE`, `RENAME TABLE`. Unsupported operations (compound `ALTER TABLE`, charset changes, partition ops, metadata-only ops) emit an explanatory warning instead (#41)
+- Parser now extracts `IndexName` for `ADD CONSTRAINT` (FK constraint name) and `RENAME INDEX` (old index name) — previously always blank; required for FK/rename idempotency checks
+
 ## [0.3.6] - 2026-02-24
 
 ### Fixed
