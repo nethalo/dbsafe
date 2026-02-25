@@ -59,6 +59,7 @@ const (
 	ForceRebuild        DDLOperation = "FORCE_REBUILD"
 	MultipleOps         DDLOperation = "MULTIPLE_OPS"
 	CreateTable         DDLOperation = "CREATE_TABLE"
+	AddCheckConstraint  DDLOperation = "ADD_CHECK_CONSTRAINT"
 	OtherDDL            DDLOperation = "OTHER"
 
 	// Table option operations (metadata-only, INPLACE LOCK=NONE)
@@ -115,6 +116,7 @@ type ParsedSQL struct {
 	IndexColumns      []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names
 	IsUniqueIndex     bool           // true when ADD UNIQUE KEY/INDEX
 	NewEngine         string         // for ENGINE=<name>: the target engine (lowercased)
+	CheckExpr         string         // for ADD CONSTRAINT ... CHECK: the check expression
 }
 
 var (
@@ -415,7 +417,11 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 		result.IndexName = opt.Name.String()
 
 	case *sqlparser.AddConstraintDefinition:
-		result.IndexName = opt.ConstraintDefinition.Name.String()
+		if chk, ok := opt.ConstraintDefinition.Details.(*sqlparser.CheckConstraintDefinition); ok {
+			result.CheckExpr = sqlparser.String(chk.Expr)
+		} else {
+			result.IndexName = opt.ConstraintDefinition.Name.String()
+		}
 
 	case *sqlparser.RenameIndex:
 		result.IndexName = opt.OldName.String()
@@ -467,6 +473,9 @@ func classifySingleAlterOp(opt sqlparser.AlterOption) DDLOperation {
 	case *sqlparser.Force:
 		return ForceRebuild
 	case *sqlparser.AddConstraintDefinition:
+		if _, ok := opt.ConstraintDefinition.Details.(*sqlparser.CheckConstraintDefinition); ok {
+			return AddCheckConstraint
+		}
 		return AddForeignKey
 	case *sqlparser.AlterCharset:
 		return ConvertCharset

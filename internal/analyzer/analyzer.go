@@ -343,6 +343,15 @@ func analyzeDDL(input Input, result *Result) {
 		))
 	}
 
+	// For ADD CONSTRAINT ... CHECK: suggest a pre-flight validation query.
+	// If any existing row violates the check expression, the ALTER will fail.
+	if input.Parsed.DDLOp == parser.AddCheckConstraint && input.Parsed.CheckExpr != "" {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"This ALTER will fail if any row violates the check constraint. Verify with:\n  SELECT * FROM %s WHERE NOT (%s) LIMIT 5;",
+			input.Parsed.Table, input.Parsed.CheckExpr,
+		))
+	}
+
 	// For ADD COLUMN with AUTO_INCREMENT: requires INPLACE with SHARED lock minimum and
 	// full table rebuild. Concurrent DML is not permitted (MySQL 8.0 Table 17.18).
 	if input.Parsed.DDLOp == parser.AddColumn && input.Parsed.HasAutoIncrement {

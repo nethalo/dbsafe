@@ -1715,6 +1715,27 @@ func TestMaxBytesPerChar(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDDL_AddCheckConstraint_Warning(t *testing.T) {
+	input := ddlInput(parser.AddCheckConstraint, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 10*1024*1024, topology.Standalone)
+	input.Parsed.CheckExpr = "amount > 0"
+	input.Parsed.Table = "orders"
+
+	result := Analyze(input)
+
+	if result.Classification.Algorithm != AlgoInplace {
+		t.Errorf("Algorithm = %q, want INPLACE", result.Classification.Algorithm)
+	}
+	if result.Classification.Lock != LockNone {
+		t.Errorf("Lock = %q, want NONE", result.Classification.Lock)
+	}
+	if !containsWarning(result.Warnings, "NOT (amount > 0)") {
+		t.Errorf("Expected check constraint validation warning, got: %v", result.Warnings)
+	}
+	if !containsWarning(result.Warnings, "orders") {
+		t.Errorf("Expected table name in warning, got: %v", result.Warnings)
+	}
+}
+
 func TestAnalyzeDDL_UnparsableOperation(t *testing.T) {
 	// Test that OtherDDL operations generate a syntax warning
 	input := ddlInput(parser.OtherDDL, mysql.ServerVersion{Major: 8, Minor: 0, Patch: 35}, 100*1024*1024, topology.Standalone)

@@ -174,6 +174,45 @@ func TestParse_AlterTableAddForeignKey(t *testing.T) {
 	}
 }
 
+func TestParse_AddCheckConstraint(t *testing.T) {
+	tests := []struct {
+		name      string
+		sql       string
+		wantExpr  string
+	}{
+		{
+			name:     "simple check on column",
+			sql:      "ALTER TABLE orders ADD CONSTRAINT chk_amount CHECK (amount > 0)",
+			wantExpr: "amount > 0",
+		},
+		{
+			name:     "compound check expression",
+			sql:      "ALTER TABLE users ADD CONSTRAINT chk_age CHECK (age >= 18 AND age <= 120)",
+			wantExpr: "age >= 18 and age <= 120",
+		},
+		{
+			name:     "check without named constraint",
+			sql:      "ALTER TABLE products ADD CHECK (price >= 0)",
+			wantExpr: "price >= 0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Parse(tt.sql)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.DDLOp != AddCheckConstraint {
+				t.Errorf("DDLOp = %q, want %q", result.DDLOp, AddCheckConstraint)
+			}
+			if result.CheckExpr != tt.wantExpr {
+				t.Errorf("CheckExpr = %q, want %q", result.CheckExpr, tt.wantExpr)
+			}
+		})
+	}
+}
+
 func TestParse_AlterTableConvertCharset(t *testing.T) {
 	result, err := Parse("ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
 	if err != nil {

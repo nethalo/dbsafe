@@ -173,6 +173,17 @@ var ddlMatrix = map[matrixKey]DDLClassification{
 	{parser.AddForeignKey, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE with foreign_key_checks=OFF. With checks ON, uses SHARED lock."},
 
 	// ═══════════════════════════════════════════════════
+	// ADD CHECK CONSTRAINT
+	// Validates all existing rows against the expression. INPLACE, LOCK=NONE —
+	// concurrent DML is allowed. No row rewrite; only the constraint metadata is added.
+	// If any existing row violates the expression, the ALTER fails.
+	// ═══════════════════════════════════════════════════
+	{parser.AddCheckConstraint, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, LOCK=NONE. Validates existing rows against the check expression; concurrent DML allowed. Fails if any row violates the constraint."},
+	{parser.AddCheckConstraint, V8_0_Instant}: {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, LOCK=NONE. Validates existing rows against the check expression; concurrent DML allowed. Fails if any row violates the constraint."},
+	{parser.AddCheckConstraint, V8_0_Full}:    {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, LOCK=NONE. Validates existing rows against the check expression; concurrent DML allowed. Fails if any row violates the constraint."},
+	{parser.AddCheckConstraint, V8_4_LTS}:     {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, LOCK=NONE. Validates existing rows against the check expression; concurrent DML allowed. Fails if any row violates the constraint."},
+
+	// ═══════════════════════════════════════════════════
 	// DROP FOREIGN KEY
 	// ═══════════════════════════════════════════════════
 	{parser.DropForeignKey, V8_0_Early}:   {Algorithm: AlgoInplace, Lock: LockNone, RebuildsTable: false, Notes: "INPLACE, metadata-only."},
