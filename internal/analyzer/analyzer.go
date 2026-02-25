@@ -133,6 +133,10 @@ type Result struct {
 
 	// Idempotent stored procedure (when --idempotent is set)
 	IdempotentSP string
+
+	// OptimizedDDL is the original ALTER TABLE with explicit ALGORITHM and LOCK hints appended,
+	// ready to copy-paste. Only set for ALTER TABLE with INSTANT or INPLACE algorithm.
+	OptimizedDDL string
 }
 
 // RollbackOption describes one way to undo the operation.
@@ -623,8 +627,23 @@ func analyzeDDL(input Input, result *Result) {
 		result.ExecutionCommand = generatePtOSCCommand(input, input.Topo.Type == topology.Galera)
 	}
 
+	// Build an optimized copy-paste DDL for ALTER TABLE with INSTANT/INPLACE algorithm.
+	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(input.Parsed.RawSQL)), "ALTER TABLE") {
+		result.OptimizedDDL = buildOptimizedDDL(input.Parsed.RawSQL, result.Classification)
+	}
+
 	// Generate rollback SQL
 	generateDDLRollback(input, result)
+}
+
+// buildOptimizedDDL appends ALGORITHM and LOCK hints to an ALTER TABLE statement so the user
+// can copy-paste it directly. Returns empty string for COPY or DEPENDS (no improvement possible).
+func buildOptimizedDDL(rawSQL string, c DDLClassification) string {
+	if c.Algorithm != AlgoInstant && c.Algorithm != AlgoInplace {
+		return ""
+	}
+	sql := strings.TrimRight(strings.TrimSpace(rawSQL), ";")
+	return fmt.Sprintf("%s, ALGORITHM=%s, LOCK=%s;", sql, c.Algorithm, c.Lock)
 }
 
 func analyzeDML(input Input, result *Result) {

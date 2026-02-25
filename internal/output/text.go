@@ -59,6 +59,11 @@ func (r *TextRenderer) RenderPlan(result *analyzer.Result) {
 	// Operation box
 	r.renderOperationBox(result, width)
 
+	// Suggested DDL with ALGORITHM/LOCK hints (INSTANT/INPLACE ALTER TABLE only)
+	if result.OptimizedDDL != "" {
+		r.renderOptimizedDDL(result, width)
+	}
+
 	// Cluster warnings
 	if len(result.ClusterWarnings) > 0 {
 		r.renderClusterWarnings(result, width)
@@ -266,6 +271,14 @@ func (r *TextRenderer) renderRollback(result *analyzer.Result, width int) {
 
 	rollbackBox := BoxStyle.Width(width).Render(content.String())
 	fmt.Fprintln(r.w, rollbackBox)
+}
+
+func (r *TextRenderer) renderOptimizedDDL(result *analyzer.Result, width int) {
+	title := TitleStyle.Render("Suggested DDL")
+	note := MutedText.Render("Ready to run with explicit ALGORITHM and LOCK hints:")
+	content := title + "\n" + note + "\n\n" + CodeStyle.Render(result.OptimizedDDL)
+	box := BoxStyle.Width(width).Render(content)
+	fmt.Fprintln(r.w, box)
 }
 
 func (r *TextRenderer) renderIdempotentSP(result *analyzer.Result, width int) {

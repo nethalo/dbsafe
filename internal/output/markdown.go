@@ -79,6 +79,9 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 		fmt.Fprintf(r.w, "| Algorithm | **%s** |\n", result.Classification.Algorithm)
 		fmt.Fprintf(r.w, "| Lock | %s |\n", result.Classification.Lock)
 		fmt.Fprintf(r.w, "| Rebuilds table | %v |\n\n", result.Classification.RebuildsTable)
+		if result.OptimizedDDL != "" {
+			fmt.Fprintf(r.w, "**Suggested DDL:**\n\n```sql\n%s\n```\n\n", result.OptimizedDDL)
+		}
 	} else {
 		fmt.Fprintf(r.w, "| Property | Value |\n|---|---|\n")
 		fmt.Fprintf(r.w, "| Type | %s |\n", result.DMLOp)

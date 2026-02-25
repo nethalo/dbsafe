@@ -59,6 +59,9 @@ func (r *PlainRenderer) RenderPlan(result *analyzer.Result) {
 		fmt.Fprintf(r.w, "Algorithm:     %s\n", result.Classification.Algorithm)
 		fmt.Fprintf(r.w, "Lock:          %s\n", result.Classification.Lock)
 		fmt.Fprintf(r.w, "Rebuilds:      %v\n", result.Classification.RebuildsTable)
+		if result.OptimizedDDL != "" {
+			fmt.Fprintf(r.w, "Suggested DDL: %s\n", result.OptimizedDDL)
+		}
 	} else {
 		fmt.Fprintf(r.w, "Type:          %s\n", result.DMLOp)
 		fmt.Fprintf(r.w, "Affected rows: ~%s (%.1f%%)\n", formatNumber(result.AffectedRows), result.AffectedPct)

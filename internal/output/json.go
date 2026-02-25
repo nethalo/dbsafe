@@ -38,6 +38,7 @@ type jsonPlanOutput struct {
 	Script                      *jsonScript       `json:"generated_script,omitempty"`
 	DiskEstimate                *jsonDiskEstimate `json:"disk_space_estimate,omitempty"`
 	IdempotentProcedure         string            `json:"idempotent_procedure,omitempty"`
+	OptimizedDDL                string            `json:"optimized_ddl,omitempty"`
 }
 
 type jsonTableMeta struct {
@@ -209,6 +210,10 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 
 	if result.IdempotentSP != "" {
 		out.IdempotentProcedure = result.IdempotentSP
+	}
+
+	if result.OptimizedDDL != "" {
+		out.OptimizedDDL = result.OptimizedDDL
 	}
 
 	enc := json.NewEncoder(r.w)
