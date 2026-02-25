@@ -111,7 +111,7 @@ func buildDSN(cfg ConnectionConfig) (string, error) {
 		dsn += "&tls=skip-verify"
 	case "custom":
 		dsn += "&tls=dbsafe-custom"
-	// "" and "disabled" → no TLS param (current behavior)
+		// "" and "disabled" → no TLS param (current behavior)
 	}
 
 	return dsn, nil

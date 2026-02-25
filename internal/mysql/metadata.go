@@ -61,13 +61,13 @@ type TriggerInfo struct {
 
 // ColumnInfo describes a single column in a table.
 type ColumnInfo struct {
-	Name             string
-	Type             string
-	Nullable         bool
-	Default          *string
-	Position         int
-	CharacterSet     *string
-	Collation        *string
+	Name              string
+	Type              string
+	Nullable          bool
+	Default           *string
+	Position          int
+	CharacterSet      *string
+	Collation         *string
 	IsStoredGenerated bool // true when EXTRA contains "STORED GENERATED"
 }
 

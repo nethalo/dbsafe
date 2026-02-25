@@ -30,21 +30,21 @@ const (
 type DDLOperation string
 
 const (
-	AddColumn       DDLOperation = "ADD_COLUMN"
-	DropColumn      DDLOperation = "DROP_COLUMN"
-	ModifyColumn    DDLOperation = "MODIFY_COLUMN"
-	ChangeColumn    DDLOperation = "CHANGE_COLUMN"
-	AddIndex        DDLOperation = "ADD_INDEX"
-	DropIndex       DDLOperation = "DROP_INDEX"
-	AddForeignKey   DDLOperation = "ADD_FOREIGN_KEY"
-	DropForeignKey  DDLOperation = "DROP_FOREIGN_KEY"
-	AddPrimaryKey   DDLOperation = "ADD_PRIMARY_KEY"
-	DropPrimaryKey  DDLOperation = "DROP_PRIMARY_KEY"
-	RenameTable     DDLOperation = "RENAME_TABLE"
-	ChangeEngine    DDLOperation = "CHANGE_ENGINE"
-	ChangeCharset   DDLOperation = "CHANGE_CHARSET"   // ALTER TABLE ... CHARACTER SET = ... (table default only)
-	ConvertCharset  DDLOperation = "CONVERT_CHARSET"  // ALTER TABLE ... CONVERT TO CHARACTER SET ... (rewrites all columns)
-	ChangeRowFormat DDLOperation = "CHANGE_ROW_FORMAT"
+	AddColumn           DDLOperation = "ADD_COLUMN"
+	DropColumn          DDLOperation = "DROP_COLUMN"
+	ModifyColumn        DDLOperation = "MODIFY_COLUMN"
+	ChangeColumn        DDLOperation = "CHANGE_COLUMN"
+	AddIndex            DDLOperation = "ADD_INDEX"
+	DropIndex           DDLOperation = "DROP_INDEX"
+	AddForeignKey       DDLOperation = "ADD_FOREIGN_KEY"
+	DropForeignKey      DDLOperation = "DROP_FOREIGN_KEY"
+	AddPrimaryKey       DDLOperation = "ADD_PRIMARY_KEY"
+	DropPrimaryKey      DDLOperation = "DROP_PRIMARY_KEY"
+	RenameTable         DDLOperation = "RENAME_TABLE"
+	ChangeEngine        DDLOperation = "CHANGE_ENGINE"
+	ChangeCharset       DDLOperation = "CHANGE_CHARSET"  // ALTER TABLE ... CHARACTER SET = ... (table default only)
+	ConvertCharset      DDLOperation = "CONVERT_CHARSET" // ALTER TABLE ... CONVERT TO CHARACTER SET ... (rewrites all columns)
+	ChangeRowFormat     DDLOperation = "CHANGE_ROW_FORMAT"
 	AddPartition        DDLOperation = "ADD_PARTITION"
 	DropPartition       DDLOperation = "DROP_PARTITION"
 	ReorganizePartition DDLOperation = "REORGANIZE_PARTITION"
@@ -67,8 +67,8 @@ const (
 	TableEncryption DDLOperation = "TABLE_ENCRYPTION"
 
 	// Multi-op combined patterns
-	ChangeIndexType    DDLOperation = "CHANGE_INDEX_TYPE"    // DROP INDEX + ADD INDEX (same name)
-	ReplacePrimaryKey  DDLOperation = "REPLACE_PRIMARY_KEY"  // DROP PRIMARY KEY + ADD PRIMARY KEY
+	ChangeIndexType   DDLOperation = "CHANGE_INDEX_TYPE"   // DROP INDEX + ADD INDEX (same name)
+	ReplacePrimaryKey DDLOperation = "REPLACE_PRIMARY_KEY" // DROP PRIMARY KEY + ADD PRIMARY KEY
 
 	// Statement-level DDL operations (not ALTER TABLE sub-operations)
 	OptimizeTable   DDLOperation = "OPTIMIZE_TABLE"   // OPTIMIZE TABLE <tbl>
@@ -87,17 +87,17 @@ const (
 
 // ParsedSQL holds the result of parsing a SQL statement.
 type ParsedSQL struct {
-	Type          StatementType
-	RawSQL        string
-	Database      string // extracted from qualified table name if present
-	Table         string
-	DDLOp         DDLOperation
-	DMLOp         DMLOperation
-	WhereClause   string // for DML: the WHERE as string
-	HasWhere      bool
-	ColumnName    string         // for ADD/DROP/MODIFY COLUMN
-	OldColumnName string         // for CHANGE COLUMN
-	NewColumnName string         // for CHANGE COLUMN
+	Type              StatementType
+	RawSQL            string
+	Database          string // extracted from qualified table name if present
+	Table             string
+	DDLOp             DDLOperation
+	DMLOp             DMLOperation
+	WhereClause       string // for DML: the WHERE as string
+	HasWhere          bool
+	ColumnName        string         // for ADD/DROP/MODIFY COLUMN
+	OldColumnName     string         // for CHANGE COLUMN
+	NewColumnName     string         // for CHANGE COLUMN
 	NewColumnType     string         // for CHANGE/MODIFY COLUMN: the new column type (e.g. "decimal(14,4)")
 	NewColumnCharset  string         // for MODIFY COLUMN: explicit CHARACTER SET clause if present (lowercase)
 	NewColumnNullable *bool          // for MODIFY COLUMN: nil=unspecified, *true=NULL, *false=NOT NULL
@@ -107,9 +107,9 @@ type ParsedSQL struct {
 	HasNotNull        bool           // ADD COLUMN ... NOT NULL
 	HasDefault        bool           // ADD COLUMN ... DEFAULT
 	HasAutoIncrement  bool           // ADD COLUMN ... AUTO_INCREMENT
-	IsGeneratedStored  bool           // ADD/MODIFY COLUMN ... AS (...) STORED
-	IsGeneratedColumn  bool           // ADD/MODIFY COLUMN has an AS (...) expression (STORED or VIRTUAL)
-	DDLOperations      []DDLOperation // for multi-op ALTER TABLE
+	IsGeneratedStored bool           // ADD/MODIFY COLUMN ... AS (...) STORED
+	IsGeneratedColumn bool           // ADD/MODIFY COLUMN has an AS (...) expression (STORED or VIRTUAL)
+	DDLOperations     []DDLOperation // for multi-op ALTER TABLE
 	TablespaceName    string         // for ALTER TABLESPACE
 	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
 	IndexColumns      []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names

@@ -13,8 +13,8 @@ func TestGenerateIdempotentSP(t *testing.T) {
 		sql         string
 		database    string
 		table       string
-		wantSP      bool   // whether we expect a non-empty SP
-		wantWarning bool   // whether we expect a non-empty warning
+		wantSP      bool                          // whether we expect a non-empty SP
+		wantWarning bool                          // whether we expect a non-empty warning
 		checkSP     func(t *testing.T, sp string) // optional extra checks on the SP
 	}{
 		{
