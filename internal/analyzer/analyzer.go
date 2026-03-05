@@ -971,6 +971,52 @@ func findColumnType(columns []mysql.ColumnInfo, name string) string {
 	return ""
 }
 
+// findColumnInfo returns the ColumnInfo for the named column, or nil if not found.
+func findColumnInfo(meta *mysql.TableMetadata, name string) *mysql.ColumnInfo {
+	if meta == nil {
+		return nil
+	}
+	for i := range meta.Columns {
+		if strings.EqualFold(meta.Columns[i].Name, name) {
+			return &meta.Columns[i]
+		}
+	}
+	return nil
+}
+
+// buildColumnRollbackSQL generates a MODIFY/CHANGE COLUMN statement that restores
+// the original column definition using live metadata.
+func buildColumnRollbackSQL(tbl string, op parser.DDLOperation, col *mysql.ColumnInfo, p *parser.ParsedSQL) string {
+	def := fmt.Sprintf("`%s` %s", col.Name, col.Type)
+	if col.Nullable {
+		def += " NULL"
+	} else {
+		def += " NOT NULL"
+	}
+	if col.Default != nil {
+		def += " DEFAULT " + quoteDefault(*col.Default)
+	}
+
+	if op == parser.ChangeColumn {
+		// CHANGE renames the column back: new_name -> old_name
+		return fmt.Sprintf("ALTER TABLE %s CHANGE COLUMN `%s` %s;", tbl, p.NewColumnName, def)
+	}
+	return fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s;", tbl, def)
+}
+
+// quoteDefault returns a SQL-safe representation of a column default value.
+func quoteDefault(val string) string {
+	upper := strings.ToUpper(val)
+	switch {
+	case upper == "NULL" || upper == "CURRENT_TIMESTAMP" || upper == "CURRENT_TIMESTAMP()":
+		return val
+	case strings.HasPrefix(upper, "CURRENT_TIMESTAMP("):
+		return val
+	default:
+		return "'" + strings.ReplaceAll(val, "'", "\\'") + "'"
+	}
+}
+
 // findColumnCharset returns the effective character set for a column, or empty if not found/not a string type.
 func findColumnCharset(columns []mysql.ColumnInfo, name string) string {
 	for _, col := range columns {
@@ -1331,10 +1377,11 @@ func generateDDLRollback(input Input, result *Result) {
 	db := result.Database
 	table := result.Table
 	p := input.Parsed
+	tbl := fmt.Sprintf("`%s`.`%s`", db, table)
 
 	switch p.DDLOp {
 	case parser.AddColumn:
-		result.RollbackSQL = fmt.Sprintf("ALTER TABLE `%s`.`%s` DROP COLUMN `%s`;", db, table, p.ColumnName)
+		result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s DROP COLUMN `%s`;", tbl, p.ColumnName)
 		if input.Version.SupportsInstantDropColumn() {
 			result.RollbackNotes = "DROP COLUMN is INSTANT in your MySQL version."
 		} else {
@@ -1344,15 +1391,143 @@ func generateDDLRollback(input Input, result *Result) {
 	case parser.DropColumn:
 		result.RollbackNotes = "Cannot automatically reverse DROP COLUMN. Restore from backup or recreate the column with original definition from SHOW CREATE TABLE."
 
+	case parser.ModifyColumn, parser.ChangeColumn:
+		colName := p.ColumnName
+		if p.DDLOp == parser.ChangeColumn {
+			colName = p.OldColumnName
+		}
+		if col := findColumnInfo(input.Meta, colName); col != nil {
+			result.RollbackSQL = buildColumnRollbackSQL(tbl, p.DDLOp, col, p)
+			result.RollbackNotes = "Reverses column change using the current column definition from live metadata."
+		} else {
+			result.RollbackNotes = "Cannot determine original column definition. Use SHOW CREATE TABLE to reconstruct."
+		}
+
 	case parser.AddIndex:
-		result.RollbackSQL = fmt.Sprintf("ALTER TABLE `%s`.`%s` DROP INDEX `%s`;", db, table, p.IndexName)
+		result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s DROP INDEX `%s`;", tbl, p.IndexName)
 		result.RollbackNotes = "DROP INDEX is INPLACE with no lock. Very fast."
+
+	case parser.AddFulltextIndex:
+		result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s DROP INDEX `%s`;", tbl, p.IndexName)
+		result.RollbackNotes = "DROP INDEX is INPLACE with no lock."
+
+	case parser.AddSpatialIndex:
+		result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s DROP INDEX `%s`;", tbl, p.IndexName)
+		result.RollbackNotes = "DROP INDEX is INPLACE with no lock."
 
 	case parser.DropIndex:
 		result.RollbackNotes = "Recreate the index using the original definition from SHOW CREATE TABLE."
 
+	case parser.AddPrimaryKey:
+		result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY;", tbl)
+		result.RollbackNotes = "DROP PRIMARY KEY requires COPY and a SHARED lock. Plan for downtime on large tables."
+
+	case parser.DropPrimaryKey:
+		result.RollbackNotes = "Recreate the primary key using the original definition from SHOW CREATE TABLE."
+
+	case parser.AddForeignKey:
+		if p.IndexName != "" {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s DROP FOREIGN KEY `%s`;", tbl, p.IndexName)
+			result.RollbackNotes = "DROP FOREIGN KEY is INPLACE with no lock."
+		} else {
+			result.RollbackNotes = "Drop the foreign key using the constraint name from SHOW CREATE TABLE."
+		}
+
+	case parser.DropForeignKey:
+		result.RollbackNotes = "Recreate the foreign key using the original definition from SHOW CREATE TABLE."
+
+	case parser.AddCheckConstraint:
+		if p.IndexName != "" {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s DROP CHECK `%s`;", tbl, p.IndexName)
+			result.RollbackNotes = "DROP CHECK is an INPLACE operation."
+		} else {
+			result.RollbackNotes = "Drop the check constraint using the constraint name from SHOW CREATE TABLE."
+		}
+
 	case parser.RenameTable:
-		result.RollbackNotes = "Reverse the RENAME TABLE with the original and new names swapped."
+		if p.NewTableName != "" {
+			result.RollbackSQL = fmt.Sprintf("RENAME TABLE `%s`.`%s` TO %s;", db, p.NewTableName, tbl)
+			result.RollbackNotes = "RENAME TABLE is a metadata-only operation. Instant."
+		} else {
+			result.RollbackNotes = "Reverse the RENAME TABLE with the original and new names swapped."
+		}
+
+	case parser.RenameIndex:
+		if p.IndexName != "" && p.NewIndexName != "" {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s RENAME INDEX `%s` TO `%s`;", tbl, p.NewIndexName, p.IndexName)
+			result.RollbackNotes = "RENAME INDEX is a metadata-only operation. Instant."
+		} else {
+			result.RollbackNotes = "Reverse the RENAME INDEX with the original and new names swapped."
+		}
+
+	case parser.ChangeEngine:
+		if input.Meta != nil && input.Meta.Engine != "" {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s ENGINE=%s;", tbl, input.Meta.Engine)
+			result.RollbackNotes = "Restores the original storage engine. Requires a full table rebuild (COPY)."
+		} else {
+			result.RollbackNotes = "Revert ENGINE using the original engine from SHOW CREATE TABLE."
+		}
+
+	case parser.ChangeRowFormat:
+		if input.Meta != nil && input.Meta.RowFormat != "" {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s ROW_FORMAT=%s;", tbl, input.Meta.RowFormat)
+			result.RollbackNotes = "Restores the original row format."
+		} else {
+			result.RollbackNotes = "Revert ROW_FORMAT using the original value from SHOW CREATE TABLE."
+		}
+
+	case parser.SetDefault:
+		if col := findColumnInfo(input.Meta, p.ColumnName); col != nil && col.Default != nil {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s ALTER COLUMN `%s` SET DEFAULT %s;", tbl, p.ColumnName, quoteDefault(*col.Default))
+			result.RollbackNotes = "SET DEFAULT is a metadata-only operation. Instant."
+		} else {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s ALTER COLUMN `%s` DROP DEFAULT;", tbl, p.ColumnName)
+			result.RollbackNotes = "Drops the default (original column had no default). Metadata-only, instant."
+		}
+
+	case parser.DropDefault:
+		if col := findColumnInfo(input.Meta, p.ColumnName); col != nil && col.Default != nil {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s ALTER COLUMN `%s` SET DEFAULT %s;", tbl, p.ColumnName, quoteDefault(*col.Default))
+			result.RollbackNotes = "Restores the original DEFAULT value. Metadata-only, instant."
+		} else {
+			result.RollbackNotes = "Cannot determine original default. Use SHOW CREATE TABLE to find it."
+		}
+
+	case parser.ChangeAutoIncrement:
+		if input.Meta != nil && input.Meta.AutoIncrement > 0 {
+			result.RollbackSQL = fmt.Sprintf("ALTER TABLE %s AUTO_INCREMENT=%d;", tbl, input.Meta.AutoIncrement)
+			result.RollbackNotes = "Restores the original AUTO_INCREMENT value. Metadata-only, instant."
+		} else {
+			result.RollbackNotes = "Cannot determine original AUTO_INCREMENT value."
+		}
+
+	case parser.CreateTable:
+		result.RollbackSQL = fmt.Sprintf("DROP TABLE IF EXISTS %s;", tbl)
+		result.RollbackNotes = "WARNING: DROP TABLE is irreversible and destroys all data."
+
+	case parser.ChangeCharset:
+		result.RollbackNotes = "Revert the table default character set using the original value from SHOW CREATE TABLE."
+
+	case parser.ConvertCharset:
+		result.RollbackNotes = "CONVERT TO CHARACTER SET rewrites all string columns. Revert using the original charset from SHOW CREATE TABLE."
+
+	case parser.ForceRebuild, parser.OptimizeTable:
+		result.RollbackNotes = "No rollback needed. This operation rebuilds the table in place without changing its definition."
+
+	case parser.AddPartition:
+		result.RollbackNotes = "Reverse with ALTER TABLE ... DROP PARTITION using the partition name."
+
+	case parser.DropPartition:
+		result.RollbackNotes = "Cannot reverse DROP PARTITION. Data in the dropped partition is permanently lost."
+
+	case parser.TruncatePartition:
+		result.RollbackNotes = "Cannot reverse TRUNCATE PARTITION. Data is permanently lost."
+
+	case parser.ReorganizePartition, parser.RebuildPartition:
+		result.RollbackNotes = "Rebuild/reorganize is a structural change. Use SHOW CREATE TABLE to reconstruct the original partitioning."
+
+	case parser.MultipleOps:
+		result.RollbackNotes = "Multi-operation ALTER TABLE. Review each sub-operation individually to determine rollback steps."
 
 	default:
 		result.RollbackNotes = "Review SHOW CREATE TABLE output to reconstruct the original state."

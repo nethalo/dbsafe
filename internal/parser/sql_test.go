@@ -1521,4 +1521,39 @@ func TestParse_RenameIndex_ExtractsOldIndexName(t *testing.T) {
 	if result.IndexName != "idx_old" {
 		t.Errorf("IndexName = %q, want idx_old", result.IndexName)
 	}
+	if result.NewIndexName != "idx_new" {
+		t.Errorf("NewIndexName = %q, want idx_new", result.NewIndexName)
+	}
+}
+
+func TestParse_RenameTable_ExtractsNewTableName(t *testing.T) {
+	result, err := Parse("RENAME TABLE old_users TO new_users")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != RenameTable {
+		t.Errorf("DDLOp = %q, want RenameTable", result.DDLOp)
+	}
+	if result.Table != "old_users" {
+		t.Errorf("Table = %q, want old_users", result.Table)
+	}
+	if result.NewTableName != "new_users" {
+		t.Errorf("NewTableName = %q, want new_users", result.NewTableName)
+	}
+}
+
+func TestParse_AlterTableRenameTo_ExtractsNewTableName(t *testing.T) {
+	result, err := Parse("ALTER TABLE users RENAME TO archived_users")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.DDLOp != RenameTable {
+		t.Errorf("DDLOp = %q, want RenameTable", result.DDLOp)
+	}
+	if result.Table != "users" {
+		t.Errorf("Table = %q, want users", result.Table)
+	}
+	if result.NewTableName != "archived_users" {
+		t.Errorf("NewTableName = %q, want archived_users", result.NewTableName)
+	}
 }

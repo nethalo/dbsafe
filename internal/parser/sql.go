@@ -138,6 +138,8 @@ type ParsedSQL struct {
 	IsUniqueIndex     bool           // true when ADD UNIQUE KEY/INDEX
 	NewEngine         string         // for ENGINE=<name>: the target engine (lowercased)
 	CheckExpr         string         // for ADD CONSTRAINT ... CHECK: the check expression
+	NewTableName      string         // for RENAME TABLE: the new table name
+	NewIndexName      string         // for RENAME INDEX: the new index name
 }
 
 var (
@@ -215,6 +217,7 @@ func Parse(sql string) (*ParsedSQL, error) {
 		result.DDLOp = RenameTable
 		if len(s.TablePairs) > 0 {
 			result.Database, result.Table = extractTableName(s.TablePairs[0].FromTable)
+			_, result.NewTableName = extractTableName(s.TablePairs[0].ToTable)
 		}
 
 	case *sqlparser.CreateTable:
@@ -379,6 +382,10 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 	case *sqlparser.ChangeColumn:
 		result.NewColumnName = opt.NewColDefinition.Name.String()
 		result.ColumnDef = sqlparser.String(opt.NewColDefinition)
+	case *sqlparser.RenameTableName:
+		_, result.NewTableName = extractTableName(opt.Table)
+	case *sqlparser.RenameIndex:
+		result.NewIndexName = opt.NewName.String()
 	}
 }
 

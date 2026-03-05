@@ -9,6 +9,7 @@ import (
 )
 
 func TestGenerateDDLRollback(t *testing.T) {
+	defaultVal := "0"
 	tests := []struct {
 		name              string
 		input             Input
@@ -60,6 +61,59 @@ func TestGenerateDDLRollback(t *testing.T) {
 			wantRollbackNotes: "Cannot automatically reverse DROP COLUMN",
 		},
 		{
+			name: "MODIFY COLUMN rollback with metadata",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:       parser.DDL,
+					DDLOp:      parser.ModifyColumn,
+					Database:   "testdb",
+					Table:      "users",
+					ColumnName: "email",
+				},
+				Meta: &mysql.TableMetadata{
+					Columns: []mysql.ColumnInfo{
+						{Name: "email", Type: "varchar(100)", Nullable: false, Default: nil},
+					},
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `testdb`.`users` MODIFY COLUMN `email` varchar(100) NOT NULL;",
+			wantRollbackNotes: "Reverses column change",
+		},
+		{
+			name: "MODIFY COLUMN rollback without metadata",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:       parser.DDL,
+					DDLOp:      parser.ModifyColumn,
+					Database:   "testdb",
+					Table:      "users",
+					ColumnName: "email",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Cannot determine original column definition",
+		},
+		{
+			name: "CHANGE COLUMN rollback with metadata",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:          parser.DDL,
+					DDLOp:         parser.ChangeColumn,
+					Database:      "testdb",
+					Table:         "users",
+					OldColumnName: "email",
+					NewColumnName: "user_email",
+				},
+				Meta: &mysql.TableMetadata{
+					Columns: []mysql.ColumnInfo{
+						{Name: "email", Type: "varchar(100)", Nullable: false, Default: nil},
+					},
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `testdb`.`users` CHANGE COLUMN `user_email` `email` varchar(100) NOT NULL;",
+			wantRollbackNotes: "Reverses column change",
+		},
+		{
 			name: "ADD INDEX rollback",
 			input: Input{
 				Parsed: &parser.ParsedSQL{
@@ -72,6 +126,34 @@ func TestGenerateDDLRollback(t *testing.T) {
 			},
 			wantRollbackSQL:   "ALTER TABLE `mydb`.`users` DROP INDEX `idx_email`;",
 			wantRollbackNotes: "DROP INDEX is INPLACE with no lock",
+		},
+		{
+			name: "ADD FULLTEXT INDEX rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:      parser.DDL,
+					DDLOp:     parser.AddFulltextIndex,
+					Database:  "mydb",
+					Table:     "posts",
+					IndexName: "ft_content",
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`posts` DROP INDEX `ft_content`;",
+			wantRollbackNotes: "DROP INDEX is INPLACE",
+		},
+		{
+			name: "ADD SPATIAL INDEX rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:      parser.DDL,
+					DDLOp:     parser.AddSpatialIndex,
+					Database:  "mydb",
+					Table:     "locations",
+					IndexName: "sp_coords",
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`locations` DROP INDEX `sp_coords`;",
+			wantRollbackNotes: "DROP INDEX is INPLACE",
 		},
 		{
 			name: "DROP INDEX rollback - need original definition",
@@ -88,7 +170,89 @@ func TestGenerateDDLRollback(t *testing.T) {
 			wantRollbackNotes: "Recreate the index using the original definition",
 		},
 		{
-			name: "RENAME TABLE rollback",
+			name: "ADD PRIMARY KEY rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.AddPrimaryKey,
+					Database: "mydb",
+					Table:    "events",
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`events` DROP PRIMARY KEY;",
+			wantRollbackNotes: "DROP PRIMARY KEY requires COPY",
+		},
+		{
+			name: "DROP PRIMARY KEY rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.DropPrimaryKey,
+					Database: "mydb",
+					Table:    "events",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Recreate the primary key",
+		},
+		{
+			name: "ADD FOREIGN KEY rollback with constraint name",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:      parser.DDL,
+					DDLOp:     parser.AddForeignKey,
+					Database:  "mydb",
+					Table:     "orders",
+					IndexName: "fk_customer",
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`orders` DROP FOREIGN KEY `fk_customer`;",
+			wantRollbackNotes: "DROP FOREIGN KEY is INPLACE",
+		},
+		{
+			name: "DROP FOREIGN KEY rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:      parser.DDL,
+					DDLOp:     parser.DropForeignKey,
+					Database:  "mydb",
+					Table:     "orders",
+					IndexName: "fk_customer",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Recreate the foreign key",
+		},
+		{
+			name: "ADD CHECK CONSTRAINT rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:      parser.DDL,
+					DDLOp:     parser.AddCheckConstraint,
+					Database:  "mydb",
+					Table:     "orders",
+					IndexName: "chk_amount",
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`orders` DROP CHECK `chk_amount`;",
+			wantRollbackNotes: "DROP CHECK is an INPLACE",
+		},
+		{
+			name: "RENAME TABLE rollback with new name",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:         parser.DDL,
+					DDLOp:        parser.RenameTable,
+					Database:     "db",
+					Table:        "old_name",
+					NewTableName: "new_name",
+				},
+			},
+			wantRollbackSQL:   "RENAME TABLE `db`.`new_name` TO `db`.`old_name`;",
+			wantRollbackNotes: "metadata-only operation",
+		},
+		{
+			name: "RENAME TABLE rollback without new name",
 			input: Input{
 				Parsed: &parser.ParsedSQL{
 					Type:     parser.DDL,
@@ -99,6 +263,269 @@ func TestGenerateDDLRollback(t *testing.T) {
 			},
 			wantRollbackSQL:   "",
 			wantRollbackNotes: "Reverse the RENAME TABLE",
+		},
+		{
+			name: "RENAME INDEX rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:         parser.DDL,
+					DDLOp:        parser.RenameIndex,
+					Database:     "mydb",
+					Table:        "users",
+					IndexName:    "idx_old",
+					NewIndexName: "idx_new",
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`users` RENAME INDEX `idx_new` TO `idx_old`;",
+			wantRollbackNotes: "metadata-only operation",
+		},
+		{
+			name: "CHANGE ENGINE rollback with metadata",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.ChangeEngine,
+					Database: "mydb",
+					Table:    "logs",
+				},
+				Meta: &mysql.TableMetadata{Engine: "InnoDB"},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`logs` ENGINE=InnoDB;",
+			wantRollbackNotes: "Restores the original storage engine",
+		},
+		{
+			name: "CHANGE ENGINE rollback without metadata",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.ChangeEngine,
+					Database: "mydb",
+					Table:    "logs",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Revert ENGINE using the original engine",
+		},
+		{
+			name: "CHANGE ROW_FORMAT rollback with metadata",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.ChangeRowFormat,
+					Database: "mydb",
+					Table:    "data",
+				},
+				Meta: &mysql.TableMetadata{RowFormat: "Dynamic"},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`data` ROW_FORMAT=Dynamic;",
+			wantRollbackNotes: "Restores the original row format",
+		},
+		{
+			name: "SET DEFAULT rollback with original default",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:       parser.DDL,
+					DDLOp:      parser.SetDefault,
+					Database:   "mydb",
+					Table:      "users",
+					ColumnName: "status",
+				},
+				Meta: &mysql.TableMetadata{
+					Columns: []mysql.ColumnInfo{
+						{Name: "status", Type: "int", Default: &defaultVal},
+					},
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`users` ALTER COLUMN `status` SET DEFAULT '0';",
+			wantRollbackNotes: "SET DEFAULT is a metadata-only operation",
+		},
+		{
+			name: "SET DEFAULT rollback without original default",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:       parser.DDL,
+					DDLOp:      parser.SetDefault,
+					Database:   "mydb",
+					Table:      "users",
+					ColumnName: "name",
+				},
+				Meta: &mysql.TableMetadata{
+					Columns: []mysql.ColumnInfo{
+						{Name: "name", Type: "varchar(50)"},
+					},
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`users` ALTER COLUMN `name` DROP DEFAULT;",
+			wantRollbackNotes: "Drops the default",
+		},
+		{
+			name: "DROP DEFAULT rollback with original default",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:       parser.DDL,
+					DDLOp:      parser.DropDefault,
+					Database:   "mydb",
+					Table:      "users",
+					ColumnName: "status",
+				},
+				Meta: &mysql.TableMetadata{
+					Columns: []mysql.ColumnInfo{
+						{Name: "status", Type: "int", Default: &defaultVal},
+					},
+				},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`users` ALTER COLUMN `status` SET DEFAULT '0';",
+			wantRollbackNotes: "Restores the original DEFAULT",
+		},
+		{
+			name: "DROP DEFAULT rollback without original default",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:       parser.DDL,
+					DDLOp:      parser.DropDefault,
+					Database:   "mydb",
+					Table:      "users",
+					ColumnName: "name",
+				},
+				Meta: &mysql.TableMetadata{
+					Columns: []mysql.ColumnInfo{
+						{Name: "name", Type: "varchar(50)"},
+					},
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Cannot determine original default",
+		},
+		{
+			name: "CHANGE AUTO_INCREMENT rollback with metadata",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.ChangeAutoIncrement,
+					Database: "mydb",
+					Table:    "users",
+				},
+				Meta: &mysql.TableMetadata{AutoIncrement: 42},
+			},
+			wantRollbackSQL:   "ALTER TABLE `mydb`.`users` AUTO_INCREMENT=42;",
+			wantRollbackNotes: "Restores the original AUTO_INCREMENT",
+		},
+		{
+			name: "CREATE TABLE rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.CreateTable,
+					Database: "mydb",
+					Table:    "new_table",
+				},
+			},
+			wantRollbackSQL:   "DROP TABLE IF EXISTS `mydb`.`new_table`;",
+			wantRollbackNotes: "WARNING: DROP TABLE is irreversible",
+		},
+		{
+			name: "FORCE REBUILD - no rollback needed",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.ForceRebuild,
+					Database: "mydb",
+					Table:    "data",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "No rollback needed",
+		},
+		{
+			name: "OPTIMIZE TABLE - no rollback needed",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.OptimizeTable,
+					Database: "mydb",
+					Table:    "data",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "No rollback needed",
+		},
+		{
+			name: "DROP PARTITION - data lost",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.DropPartition,
+					Database: "mydb",
+					Table:    "events",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Cannot reverse DROP PARTITION",
+		},
+		{
+			name: "TRUNCATE PARTITION - data lost",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.TruncatePartition,
+					Database: "mydb",
+					Table:    "events",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Cannot reverse TRUNCATE PARTITION",
+		},
+		{
+			name: "ADD PARTITION rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.AddPartition,
+					Database: "mydb",
+					Table:    "events",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Reverse with ALTER TABLE ... DROP PARTITION",
+		},
+		{
+			name: "CHANGE CHARSET rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.ChangeCharset,
+					Database: "mydb",
+					Table:    "data",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Revert the table default character set",
+		},
+		{
+			name: "CONVERT CHARSET rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.ConvertCharset,
+					Database: "mydb",
+					Table:    "data",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "CONVERT TO CHARACTER SET rewrites all string columns",
+		},
+		{
+			name: "MULTIPLE OPS rollback",
+			input: Input{
+				Parsed: &parser.ParsedSQL{
+					Type:     parser.DDL,
+					DDLOp:    parser.MultipleOps,
+					Database: "mydb",
+					Table:    "data",
+				},
+			},
+			wantRollbackSQL:   "",
+			wantRollbackNotes: "Multi-operation ALTER TABLE",
 		},
 		{
 			name: "Other DDL - manual rollback",
