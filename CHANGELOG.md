@@ -8,6 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-05
+
+### Added
+- Foreign key detail display: constraint names, local columns, cascade rules (ON DELETE/UPDATE), and inbound references from child tables are now shown in the output (#48)
+- Specific rollback commands for all recognized DDL operations — `SHOW CREATE TABLE` is now a last resort only (#49):
+  - Exact reverse SQL for: `ADD/DROP COLUMN`, `ADD/DROP INDEX`, `ADD/DROP PRIMARY KEY`, `ADD/DROP FOREIGN KEY`, `ADD CHECK`, `RENAME TABLE`, `RENAME INDEX`, `CREATE TABLE`, `SET/DROP DEFAULT`, `CHANGE AUTO_INCREMENT`, `ADD FULLTEXT/SPATIAL INDEX`
+  - Metadata-driven reverse SQL for: `MODIFY COLUMN`, `CHANGE COLUMN`, `CHANGE ENGINE`, `CHANGE ROW_FORMAT` (uses live schema from `INFORMATION_SCHEMA`)
+  - Targeted guidance for destructive/irreversible ops (`DROP PARTITION`, `TRUNCATE PARTITION`, `CONVERT CHARSET`)
+  - "No rollback needed" for idempotent ops (`FORCE`, `OPTIMIZE TABLE`)
+- Parser now extracts `NewTableName` (for `RENAME TABLE`) and `NewIndexName` (for `RENAME INDEX`) to enable reverse SQL generation
+
 ## [0.5.1] - 2026-02-25
 
 ### Added
