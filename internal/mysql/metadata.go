@@ -9,20 +9,21 @@ import (
 
 // TableMetadata holds all metadata about a table needed for analysis.
 type TableMetadata struct {
-	Database      string
-	Table         string
-	Engine        string
-	RowCount      int64
-	DataLength    int64 // bytes
-	IndexLength   int64 // bytes
-	AvgRowLength  int64 // bytes
-	AutoIncrement int64
-	RowFormat     string
-	CreateTable   string // full CREATE TABLE statement
-	Columns       []ColumnInfo
-	Indexes       []IndexInfo
-	ForeignKeys   []ForeignKeyInfo
-	Triggers      []TriggerInfo
+	Database           string
+	Table              string
+	Engine             string
+	RowCount           int64
+	DataLength         int64 // bytes
+	IndexLength        int64 // bytes
+	AvgRowLength       int64 // bytes
+	AutoIncrement      int64
+	RowFormat          string
+	CreateTable        string // full CREATE TABLE statement
+	Columns            []ColumnInfo
+	Indexes            []IndexInfo
+	ForeignKeys        []ForeignKeyInfo
+	InboundForeignKeys []ForeignKeyInfo
+	Triggers           []TriggerInfo
 }
 
 // TotalSize returns data + index size in bytes.
@@ -50,6 +51,10 @@ type ForeignKeyInfo struct {
 	ReferencedTable  string
 	ReferencedSchema string
 	ReferencedCols   []string
+	DeleteRule       string // CASCADE, RESTRICT, SET NULL, NO ACTION, SET DEFAULT
+	UpdateRule       string
+	ChildTable       string // populated only for inbound FKs (the table that owns the constraint)
+	ChildSchema      string // populated only for inbound FKs
 }
 
 // TriggerInfo describes a trigger on a table.
@@ -145,6 +150,12 @@ func GetTableMetadata(db *sql.DB, database, table string) (*TableMetadata, error
 		return nil, fmt.Errorf("querying foreign keys: %w", err)
 	}
 
+	// Inbound foreign keys (other tables referencing THIS table)
+	meta.InboundForeignKeys, err = getInboundForeignKeys(ctx, db, database, table)
+	if err != nil {
+		return nil, fmt.Errorf("querying inbound foreign keys: %w", err)
+	}
+
 	// Triggers
 	meta.Triggers, err = getTriggers(ctx, db, database, table)
 	if err != nil {
@@ -201,15 +212,21 @@ func getIndexes(ctx context.Context, db *sql.DB, database, table string) ([]Inde
 func getForeignKeys(ctx context.Context, db *sql.DB, database, table string) ([]ForeignKeyInfo, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT
-			CONSTRAINT_NAME,
-			COLUMN_NAME,
-			REFERENCED_TABLE_SCHEMA,
-			REFERENCED_TABLE_NAME,
-			REFERENCED_COLUMN_NAME
-		FROM information_schema.KEY_COLUMN_USAGE
-		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-			AND REFERENCED_TABLE_NAME IS NOT NULL
-		ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION
+			k.CONSTRAINT_NAME,
+			k.COLUMN_NAME,
+			k.REFERENCED_TABLE_SCHEMA,
+			k.REFERENCED_TABLE_NAME,
+			k.REFERENCED_COLUMN_NAME,
+			r.DELETE_RULE,
+			r.UPDATE_RULE
+		FROM information_schema.KEY_COLUMN_USAGE k
+		JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+			ON r.CONSTRAINT_SCHEMA = k.TABLE_SCHEMA
+			AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+			AND r.TABLE_NAME = k.TABLE_NAME
+		WHERE k.TABLE_SCHEMA = ? AND k.TABLE_NAME = ?
+			AND k.REFERENCED_TABLE_NAME IS NOT NULL
+		ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION
 	`, database, table)
 	if err != nil {
 		return nil, err
@@ -220,8 +237,8 @@ func getForeignKeys(ctx context.Context, db *sql.DB, database, table string) ([]
 	var order []string
 
 	for rows.Next() {
-		var name, col, refSchema, refTable, refCol string
-		if err := rows.Scan(&name, &col, &refSchema, &refTable, &refCol); err != nil {
+		var name, col, refSchema, refTable, refCol, deleteRule, updateRule string
+		if err := rows.Scan(&name, &col, &refSchema, &refTable, &refCol, &deleteRule, &updateRule); err != nil {
 			return nil, err
 		}
 
@@ -230,6 +247,8 @@ func getForeignKeys(ctx context.Context, db *sql.DB, database, table string) ([]
 				Name:             name,
 				ReferencedSchema: refSchema,
 				ReferencedTable:  refTable,
+				DeleteRule:       deleteRule,
+				UpdateRule:       updateRule,
 			}
 			order = append(order, name)
 		}
@@ -240,6 +259,62 @@ func getForeignKeys(ctx context.Context, db *sql.DB, database, table string) ([]
 	var result []ForeignKeyInfo
 	for _, name := range order {
 		result = append(result, *fkMap[name])
+	}
+	return result, nil
+}
+
+func getInboundForeignKeys(ctx context.Context, db *sql.DB, database, table string) ([]ForeignKeyInfo, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT
+			k.CONSTRAINT_NAME,
+			k.TABLE_SCHEMA,
+			k.TABLE_NAME,
+			k.COLUMN_NAME,
+			k.REFERENCED_COLUMN_NAME,
+			r.DELETE_RULE,
+			r.UPDATE_RULE
+		FROM information_schema.KEY_COLUMN_USAGE k
+		JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+			ON r.CONSTRAINT_SCHEMA = k.TABLE_SCHEMA
+			AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+			AND r.TABLE_NAME = k.TABLE_NAME
+		WHERE k.REFERENCED_TABLE_SCHEMA = ? AND k.REFERENCED_TABLE_NAME = ?
+		ORDER BY k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION
+	`, database, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	fkMap := make(map[string]*ForeignKeyInfo)
+	var order []string
+
+	for rows.Next() {
+		var name, childSchema, childTable, col, refCol, deleteRule, updateRule string
+		if err := rows.Scan(&name, &childSchema, &childTable, &col, &refCol, &deleteRule, &updateRule); err != nil {
+			return nil, err
+		}
+
+		key := childSchema + "." + childTable + "." + name
+		if _, exists := fkMap[key]; !exists {
+			fkMap[key] = &ForeignKeyInfo{
+				Name:             name,
+				ChildSchema:      childSchema,
+				ChildTable:       childTable,
+				ReferencedTable:  table,
+				ReferencedSchema: database,
+				DeleteRule:       deleteRule,
+				UpdateRule:       updateRule,
+			}
+			order = append(order, key)
+		}
+		fkMap[key].Columns = append(fkMap[key].Columns, col)
+		fkMap[key].ReferencedCols = append(fkMap[key].ReferencedCols, refCol)
+	}
+
+	var result []ForeignKeyInfo
+	for _, key := range order {
+		result = append(result, *fkMap[key])
 	}
 	return result, nil
 }

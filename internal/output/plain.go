@@ -27,6 +27,47 @@ func (r *PlainRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintf(r.w, "Engine:        %s\n", result.TableMeta.Engine)
 	fmt.Fprintln(r.w)
 
+	// Foreign keys
+	if len(result.TableMeta.ForeignKeys) > 0 || len(result.TableMeta.InboundForeignKeys) > 0 {
+		fmt.Fprintf(r.w, "--- Foreign Keys ---\n")
+		if len(result.TableMeta.ForeignKeys) > 0 {
+			fmt.Fprintf(r.w, "Outbound (%d):\n", len(result.TableMeta.ForeignKeys))
+			for _, fk := range result.TableMeta.ForeignKeys {
+				line := fmt.Sprintf("  %s: %s -> %s(%s)",
+					fk.Name,
+					strings.Join(fk.Columns, ", "),
+					fk.ReferencedTable,
+					strings.Join(fk.ReferencedCols, ", "))
+				if fk.DeleteRule != "" && fk.DeleteRule != "NO ACTION" {
+					line += fmt.Sprintf("  ON DELETE %s", fk.DeleteRule)
+				}
+				if fk.UpdateRule != "" && fk.UpdateRule != "NO ACTION" {
+					line += fmt.Sprintf("  ON UPDATE %s", fk.UpdateRule)
+				}
+				fmt.Fprintln(r.w, line)
+			}
+		}
+		if len(result.TableMeta.InboundForeignKeys) > 0 {
+			fmt.Fprintf(r.w, "Inbound (%d):\n", len(result.TableMeta.InboundForeignKeys))
+			for _, fk := range result.TableMeta.InboundForeignKeys {
+				line := fmt.Sprintf("  %s (%s): %s -> %s(%s)",
+					fk.Name,
+					fk.ChildTable,
+					strings.Join(fk.Columns, ", "),
+					fk.ReferencedTable,
+					strings.Join(fk.ReferencedCols, ", "))
+				if fk.DeleteRule != "" && fk.DeleteRule != "NO ACTION" {
+					line += fmt.Sprintf("  ON DELETE %s", fk.DeleteRule)
+				}
+				if fk.UpdateRule != "" && fk.UpdateRule != "NO ACTION" {
+					line += fmt.Sprintf("  ON UPDATE %s", fk.UpdateRule)
+				}
+				fmt.Fprintln(r.w, line)
+			}
+		}
+		fmt.Fprintln(r.w)
+	}
+
 	// Topology
 	if result.Topology.Type != topology.Standalone || result.Topology.IsCloudManaged {
 		fmt.Fprintf(r.w, "--- Topology ---\n")

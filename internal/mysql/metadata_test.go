@@ -142,15 +142,26 @@ func TestGetTableMetadata(t *testing.T) {
 			WithArgs("testdb", "users").
 			WillReturnRows(idxRows)
 
-		// Mock KEY_COLUMN_USAGE query (foreign keys)
+		// Mock outbound FK query (KEY_COLUMN_USAGE JOIN REFERENTIAL_CONSTRAINTS)
 		fkRows := sqlmock.NewRows([]string{
 			"CONSTRAINT_NAME", "COLUMN_NAME", "REFERENCED_TABLE_SCHEMA",
 			"REFERENCED_TABLE_NAME", "REFERENCED_COLUMN_NAME",
+			"DELETE_RULE", "UPDATE_RULE",
 		}) // No foreign keys
 
-		mock.ExpectQuery("SELECT.*FROM information_schema.KEY_COLUMN_USAGE").
+		mock.ExpectQuery("SELECT.*FROM information_schema.KEY_COLUMN_USAGE k").
 			WithArgs("testdb", "users").
 			WillReturnRows(fkRows)
+
+		// Mock inbound FK query
+		inboundFKRows := sqlmock.NewRows([]string{
+			"CONSTRAINT_NAME", "TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME",
+			"REFERENCED_COLUMN_NAME", "DELETE_RULE", "UPDATE_RULE",
+		}) // No inbound foreign keys
+
+		mock.ExpectQuery("SELECT.*FROM information_schema.KEY_COLUMN_USAGE k.*REFERENCED_TABLE_SCHEMA").
+			WithArgs("testdb", "users").
+			WillReturnRows(inboundFKRows)
 
 		// Mock TRIGGERS query
 		triggerRows := sqlmock.NewRows([]string{
@@ -351,12 +362,13 @@ func TestGetForeignKeys(t *testing.T) {
 	rows := sqlmock.NewRows([]string{
 		"CONSTRAINT_NAME", "COLUMN_NAME", "REFERENCED_TABLE_SCHEMA",
 		"REFERENCED_TABLE_NAME", "REFERENCED_COLUMN_NAME",
+		"DELETE_RULE", "UPDATE_RULE",
 	}).
-		AddRow("fk_user", "user_id", "testdb", "users", "id").
-		AddRow("fk_composite", "col1", "otherdb", "other_table", "ref1").
-		AddRow("fk_composite", "col2", "otherdb", "other_table", "ref2")
+		AddRow("fk_user", "user_id", "testdb", "users", "id", "CASCADE", "NO ACTION").
+		AddRow("fk_composite", "col1", "otherdb", "other_table", "ref1", "RESTRICT", "RESTRICT").
+		AddRow("fk_composite", "col2", "otherdb", "other_table", "ref2", "RESTRICT", "RESTRICT")
 
-	mock.ExpectQuery("SELECT.*FROM information_schema.KEY_COLUMN_USAGE").
+	mock.ExpectQuery("SELECT.*FROM information_schema.KEY_COLUMN_USAGE k").
 		WithArgs("testdb", "orders").
 		WillReturnRows(rows)
 
@@ -379,6 +391,12 @@ func TestGetForeignKeys(t *testing.T) {
 	if len(fks[0].Columns) != 1 || fks[0].Columns[0] != "user_id" {
 		t.Errorf("fks[0].Columns = %v, want ['user_id']", fks[0].Columns)
 	}
+	if fks[0].DeleteRule != "CASCADE" {
+		t.Errorf("fks[0].DeleteRule = %q, want %q", fks[0].DeleteRule, "CASCADE")
+	}
+	if fks[0].UpdateRule != "NO ACTION" {
+		t.Errorf("fks[0].UpdateRule = %q, want %q", fks[0].UpdateRule, "NO ACTION")
+	}
 
 	// Check composite FK
 	if fks[1].Name != "fk_composite" {
@@ -389,6 +407,64 @@ func TestGetForeignKeys(t *testing.T) {
 	}
 	if fks[1].Columns[0] != "col1" || fks[1].Columns[1] != "col2" {
 		t.Errorf("fks[1].Columns = %v, want ['col1', 'col2']", fks[1].Columns)
+	}
+	if fks[1].DeleteRule != "RESTRICT" {
+		t.Errorf("fks[1].DeleteRule = %q, want %q", fks[1].DeleteRule, "RESTRICT")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestGetInboundForeignKeys(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	rows := sqlmock.NewRows([]string{
+		"CONSTRAINT_NAME", "TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME",
+		"REFERENCED_COLUMN_NAME", "DELETE_RULE", "UPDATE_RULE",
+	}).
+		AddRow("fk_order", "testdb", "order_items", "order_id", "id", "CASCADE", "NO ACTION").
+		AddRow("fk_product", "testdb", "order_items", "product_id", "id", "RESTRICT", "NO ACTION")
+
+	mock.ExpectQuery("SELECT.*FROM information_schema.KEY_COLUMN_USAGE k.*REFERENCED_TABLE_SCHEMA").
+		WithArgs("testdb", "orders").
+		WillReturnRows(rows)
+
+	fks, err := getInboundForeignKeys(context.Background(), db, "testdb", "orders")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(fks) != 2 {
+		t.Fatalf("expected 2 inbound foreign keys, got %d", len(fks))
+	}
+
+	if fks[0].Name != "fk_order" {
+		t.Errorf("fks[0].Name = %q, want %q", fks[0].Name, "fk_order")
+	}
+	if fks[0].ChildTable != "order_items" {
+		t.Errorf("fks[0].ChildTable = %q, want %q", fks[0].ChildTable, "order_items")
+	}
+	if fks[0].DeleteRule != "CASCADE" {
+		t.Errorf("fks[0].DeleteRule = %q, want %q", fks[0].DeleteRule, "CASCADE")
+	}
+	if len(fks[0].Columns) != 1 || fks[0].Columns[0] != "order_id" {
+		t.Errorf("fks[0].Columns = %v, want ['order_id']", fks[0].Columns)
+	}
+	if len(fks[0].ReferencedCols) != 1 || fks[0].ReferencedCols[0] != "id" {
+		t.Errorf("fks[0].ReferencedCols = %v, want ['id']", fks[0].ReferencedCols)
+	}
+
+	if fks[1].Name != "fk_product" {
+		t.Errorf("fks[1].Name = %q, want %q", fks[1].Name, "fk_product")
+	}
+	if fks[1].DeleteRule != "RESTRICT" {
+		t.Errorf("fks[1].DeleteRule = %q, want %q", fks[1].DeleteRule, "RESTRICT")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

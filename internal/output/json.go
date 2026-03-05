@@ -42,13 +42,28 @@ type jsonPlanOutput struct {
 }
 
 type jsonTableMeta struct {
-	SizeBytes    int64  `json:"size_bytes"`
-	SizeHuman    string `json:"size_human"`
-	RowCount     int64  `json:"row_count"`
-	IndexCount   int    `json:"index_count"`
-	FKCount      int    `json:"fk_count"`
-	TriggerCount int    `json:"trigger_count"`
-	Engine       string `json:"engine"`
+	SizeBytes    int64           `json:"size_bytes"`
+	SizeHuman    string          `json:"size_human"`
+	RowCount     int64           `json:"row_count"`
+	IndexCount   int             `json:"index_count"`
+	ForeignKeys  jsonForeignKeys `json:"foreign_keys"`
+	TriggerCount int             `json:"trigger_count"`
+	Engine       string          `json:"engine"`
+}
+
+type jsonForeignKeys struct {
+	Outbound []jsonFKDetail `json:"outbound,omitempty"`
+	Inbound  []jsonFKDetail `json:"inbound,omitempty"`
+}
+
+type jsonFKDetail struct {
+	Name       string   `json:"name"`
+	Columns    []string `json:"columns"`
+	RefTable   string   `json:"references_table"`
+	RefColumns []string `json:"references_columns"`
+	OnDelete   string   `json:"on_delete"`
+	OnUpdate   string   `json:"on_update"`
+	ChildTable string   `json:"child_table,omitempty"` // inbound only
 }
 
 type jsonTopology struct {
@@ -72,11 +87,11 @@ type jsonSubOperation struct {
 
 type jsonOperation struct {
 	// DDL
-	DDLOp         string              `json:"ddl_operation,omitempty"`
-	Algorithm     string              `json:"algorithm,omitempty"`
-	Lock          string              `json:"lock,omitempty"`
-	RebuildsTable *bool               `json:"rebuilds_table,omitempty"`
-	SubOperations []jsonSubOperation  `json:"sub_operations,omitempty"`
+	DDLOp         string             `json:"ddl_operation,omitempty"`
+	Algorithm     string             `json:"algorithm,omitempty"`
+	Lock          string             `json:"lock,omitempty"`
+	RebuildsTable *bool              `json:"rebuilds_table,omitempty"`
+	SubOperations []jsonSubOperation `json:"sub_operations,omitempty"`
 
 	// DML
 	DMLOp        string  `json:"dml_operation,omitempty"`
@@ -121,7 +136,7 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 			SizeHuman:    result.TableMeta.TotalSizeHuman(),
 			RowCount:     result.TableMeta.RowCount,
 			IndexCount:   len(result.TableMeta.Indexes),
-			FKCount:      len(result.TableMeta.ForeignKeys),
+			ForeignKeys:  buildJSONForeignKeys(result.TableMeta),
 			TriggerCount: len(result.TableMeta.Triggers),
 			Engine:       result.TableMeta.Engine,
 		},
@@ -219,6 +234,32 @@ func (r *JSONRenderer) RenderPlan(result *analyzer.Result) {
 	enc := json.NewEncoder(r.w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(out)
+}
+
+func buildJSONForeignKeys(meta *mysql.TableMetadata) jsonForeignKeys {
+	var fks jsonForeignKeys
+	for _, fk := range meta.ForeignKeys {
+		fks.Outbound = append(fks.Outbound, jsonFKDetail{
+			Name:       fk.Name,
+			Columns:    fk.Columns,
+			RefTable:   fk.ReferencedTable,
+			RefColumns: fk.ReferencedCols,
+			OnDelete:   fk.DeleteRule,
+			OnUpdate:   fk.UpdateRule,
+		})
+	}
+	for _, fk := range meta.InboundForeignKeys {
+		fks.Inbound = append(fks.Inbound, jsonFKDetail{
+			Name:       fk.Name,
+			Columns:    fk.Columns,
+			RefTable:   fk.ReferencedTable,
+			RefColumns: fk.ReferencedCols,
+			OnDelete:   fk.DeleteRule,
+			OnUpdate:   fk.UpdateRule,
+			ChildTable: fk.ChildTable,
+		})
+	}
+	return fks
 }
 
 func (r *JSONRenderer) RenderTopology(conn mysql.ConnectionConfig, topo *topology.Info) {

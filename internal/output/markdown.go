@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/nethalo/dbsafe/internal/analyzer"
 	"github.com/nethalo/dbsafe/internal/mysql"
@@ -26,10 +27,42 @@ func (r *MarkdownRenderer) RenderPlan(result *analyzer.Result) {
 	fmt.Fprintf(r.w, "| Size | %s |\n", result.TableMeta.TotalSizeHuman())
 	fmt.Fprintf(r.w, "| Row count | ~%s |\n", formatNumber(result.TableMeta.RowCount))
 	fmt.Fprintf(r.w, "| Indexes | %d |\n", len(result.TableMeta.Indexes))
-	fmt.Fprintf(r.w, "| Foreign keys | %d |\n", len(result.TableMeta.ForeignKeys))
 	fmt.Fprintf(r.w, "| Triggers | %d |\n", len(result.TableMeta.Triggers))
 	fmt.Fprintf(r.w, "| Engine | %s |\n", result.TableMeta.Engine)
 	fmt.Fprintf(r.w, "| MySQL version | %s |\n\n", result.Version.String())
+
+	// Foreign keys detail
+	if len(result.TableMeta.ForeignKeys) > 0 {
+		fmt.Fprintf(r.w, "### Foreign Keys (outbound)\n\n")
+		fmt.Fprintf(r.w, "| Constraint | Column(s) | References | ON DELETE | ON UPDATE |\n")
+		fmt.Fprintf(r.w, "|---|---|---|---|---|\n")
+		for _, fk := range result.TableMeta.ForeignKeys {
+			fmt.Fprintf(r.w, "| %s | %s | %s(%s) | %s | %s |\n",
+				fk.Name,
+				strings.Join(fk.Columns, ", "),
+				fk.ReferencedTable,
+				strings.Join(fk.ReferencedCols, ", "),
+				fk.DeleteRule,
+				fk.UpdateRule)
+		}
+		fmt.Fprintln(r.w)
+	}
+	if len(result.TableMeta.InboundForeignKeys) > 0 {
+		fmt.Fprintf(r.w, "### Foreign Keys (inbound)\n\n")
+		fmt.Fprintf(r.w, "| Constraint | Child Table | Column(s) | References | ON DELETE | ON UPDATE |\n")
+		fmt.Fprintf(r.w, "|---|---|---|---|---|---|\n")
+		for _, fk := range result.TableMeta.InboundForeignKeys {
+			fmt.Fprintf(r.w, "| %s | %s | %s | %s(%s) | %s | %s |\n",
+				fk.Name,
+				fk.ChildTable,
+				strings.Join(fk.Columns, ", "),
+				fk.ReferencedTable,
+				strings.Join(fk.ReferencedCols, ", "),
+				fk.DeleteRule,
+				fk.UpdateRule)
+		}
+		fmt.Fprintln(r.w)
+	}
 
 	// Topology
 	if result.Topology.Type != topology.Standalone || result.Topology.IsCloudManaged {

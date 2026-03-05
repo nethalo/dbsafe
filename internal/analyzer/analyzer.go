@@ -37,6 +37,12 @@ const ptOSCTriggerRationale = "gh-ost cannot operate on tables with existing tri
 	"during the shadow table population, causing data corruption or errors. " +
 	"pt-online-schema-change supports --preserve-triggers to safely migrate tables that have triggers."
 
+// ptOSCForeignKeyRationale explains why gh-ost cannot be used on tables with foreign keys.
+const ptOSCForeignKeyRationale = "gh-ost cannot operate on tables that have foreign key constraints " +
+	"(either as a child or parent table). It creates a shadow table and performs an atomic rename at " +
+	"cutover, which breaks FK relationships. " +
+	"pt-online-schema-change supports --alter-foreign-keys-method to safely handle FK tables."
+
 // auroraGhostRationale explains why gh-ost cannot be used on Aurora MySQL.
 const auroraGhostRationale = "gh-ost is NOT compatible with Aurora MySQL: Aurora uses storage-layer " +
 	"replication instead of MySQL binary log replication. gh-ost relies on reading the binary log stream " +
@@ -614,6 +620,14 @@ func analyzeDDL(input Input, result *Result) {
 		result.Method = ExecPtOSC
 		result.AlternativeMethod = ""
 		result.MethodRationale = ptOSCTriggerRationale
+	}
+
+	// gh-ost cannot operate on tables with foreign key constraints (child or parent side).
+	// The atomic rename at cutover breaks FK relationships. Override to pt-osc.
+	if result.Method == ExecGhost && (len(input.Meta.ForeignKeys) > 0 || len(input.Meta.InboundForeignKeys) > 0) {
+		result.Method = ExecPtOSC
+		result.AlternativeMethod = ""
+		result.MethodRationale = ptOSCForeignKeyRationale
 	}
 
 	// Generate executable command for the primary method, and alternative when both are viable.

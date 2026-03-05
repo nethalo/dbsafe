@@ -30,12 +30,16 @@ func (r *TextRenderer) RenderPlan(result *analyzer.Result) {
 		r.labelValue("Table size:", result.TableMeta.TotalSizeHuman()),
 		r.labelValue("Row count:", fmt.Sprintf("~%s", formatNumber(result.TableMeta.RowCount))),
 		r.labelValue("Indexes:", fmt.Sprintf("%d", len(result.TableMeta.Indexes))),
-		r.labelValue("FK refs:", formatFKRefs(result.TableMeta.ForeignKeys)),
 		r.labelValue("Triggers:", formatTriggers(result.TableMeta.Triggers)),
 		r.labelValue("Engine:", result.TableMeta.Engine),
 	}
 	metaBox := BoxStyle.Width(width).Render(header + "\n" + strings.Join(metaLines, "\n"))
 	fmt.Fprintln(r.w, metaBox)
+
+	// Foreign keys detail box
+	if len(result.TableMeta.ForeignKeys) > 0 || len(result.TableMeta.InboundForeignKeys) > 0 {
+		r.renderForeignKeys(result, width)
+	}
 
 	// Topology box (if not standalone, or if cloud-managed)
 	if result.Topology.Type != topology.Standalone || result.Topology.IsCloudManaged {
@@ -392,15 +396,52 @@ func formatTopoType(topo *topology.Info) string {
 	}
 }
 
-func formatFKRefs(fks []mysql.ForeignKeyInfo) string {
-	if len(fks) == 0 {
-		return "None"
+func (r *TextRenderer) renderForeignKeys(result *analyzer.Result, width int) {
+	var lines []string
+
+	if len(result.TableMeta.ForeignKeys) > 0 {
+		lines = append(lines, LabelStyle.Render("Outbound:")+" "+MutedText.Render(fmt.Sprintf("(%d)", len(result.TableMeta.ForeignKeys))))
+		for _, fk := range result.TableMeta.ForeignKeys {
+			line := fmt.Sprintf("  %s: %s → %s(%s)",
+				fk.Name,
+				strings.Join(fk.Columns, ", "),
+				fk.ReferencedTable,
+				strings.Join(fk.ReferencedCols, ", "))
+			if fk.DeleteRule != "" && fk.DeleteRule != "NO ACTION" {
+				line += fmt.Sprintf("  ON DELETE %s", fk.DeleteRule)
+			}
+			if fk.UpdateRule != "" && fk.UpdateRule != "NO ACTION" {
+				line += fmt.Sprintf("  ON UPDATE %s", fk.UpdateRule)
+			}
+			lines = append(lines, line)
+		}
 	}
-	var refs []string
-	for _, fk := range fks {
-		refs = append(refs, fmt.Sprintf("%s.%s", fk.ReferencedTable, strings.Join(fk.ReferencedCols, ",")))
+
+	if len(result.TableMeta.InboundForeignKeys) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, LabelStyle.Render("Inbound:")+" "+MutedText.Render(fmt.Sprintf("(%d)", len(result.TableMeta.InboundForeignKeys))))
+		for _, fk := range result.TableMeta.InboundForeignKeys {
+			line := fmt.Sprintf("  %s (%s): %s → %s(%s)",
+				fk.Name,
+				fk.ChildTable,
+				strings.Join(fk.Columns, ", "),
+				fk.ReferencedTable,
+				strings.Join(fk.ReferencedCols, ", "))
+			if fk.DeleteRule != "" && fk.DeleteRule != "NO ACTION" {
+				line += fmt.Sprintf("  ON DELETE %s", fk.DeleteRule)
+			}
+			if fk.UpdateRule != "" && fk.UpdateRule != "NO ACTION" {
+				line += fmt.Sprintf("  ON UPDATE %s", fk.UpdateRule)
+			}
+			lines = append(lines, line)
+		}
 	}
-	return fmt.Sprintf("%d (%s)", len(fks), strings.Join(refs, ", "))
+
+	title := TitleStyle.Render("Foreign Keys")
+	fkBox := BoxStyle.Width(width).Render(title + "\n" + strings.Join(lines, "\n"))
+	fmt.Fprintln(r.w, fkBox)
 }
 
 func formatTriggers(triggers []mysql.TriggerInfo) string {

@@ -998,17 +998,40 @@ func TestFormatTopoType(t *testing.T) {
 	}
 }
 
-func TestFormatFKRefs(t *testing.T) {
-	if got := formatFKRefs(nil); got != "None" {
-		t.Errorf("formatFKRefs(nil) = %q, want None", got)
+func TestTextRenderer_ForeignKeysSection(t *testing.T) {
+	r := ddlResult()
+	r.TableMeta.ForeignKeys = []mysql.ForeignKeyInfo{
+		{Name: "fk_user", Columns: []string{"user_id"}, ReferencedTable: "users", ReferencedCols: []string{"id"}, DeleteRule: "CASCADE", UpdateRule: "NO ACTION"},
+	}
+	r.TableMeta.InboundForeignKeys = []mysql.ForeignKeyInfo{
+		{Name: "fk_order", ChildTable: "order_items", Columns: []string{"order_id"}, ReferencedTable: "users", ReferencedCols: []string{"id"}, DeleteRule: "RESTRICT", UpdateRule: "NO ACTION"},
 	}
 
-	fks := []mysql.ForeignKeyInfo{
-		{Name: "fk_user", Columns: []string{"user_id"}, ReferencedTable: "users", ReferencedCols: []string{"id"}},
+	var buf bytes.Buffer
+	renderer := &TextRenderer{w: &buf}
+	renderer.RenderPlan(r)
+	out := buf.String()
+
+	if !strings.Contains(out, "Foreign Keys") {
+		t.Error("text output missing Foreign Keys section")
 	}
-	got := formatFKRefs(fks)
-	if !strings.Contains(got, "1") || !strings.Contains(got, "users.id") {
-		t.Errorf("formatFKRefs = %q, want count and reference", got)
+	if !strings.Contains(out, "Outbound:") {
+		t.Error("text output missing Outbound label")
+	}
+	if !strings.Contains(out, "fk_user") {
+		t.Error("text output missing fk_user constraint name")
+	}
+	if !strings.Contains(out, "ON DELETE CASCADE") {
+		t.Error("text output missing ON DELETE CASCADE")
+	}
+	if !strings.Contains(out, "Inbound:") {
+		t.Error("text output missing Inbound label")
+	}
+	if !strings.Contains(out, "fk_order") {
+		t.Error("text output missing fk_order constraint name")
+	}
+	if !strings.Contains(out, "order_items") {
+		t.Error("text output missing child table name")
 	}
 }
 
