@@ -252,9 +252,14 @@ func TestServerVersion_EffectivePatch(t *testing.T) {
 		want int
 	}{
 		{
-			name: "Aurora 8.0 returns 23",
+			name: "Aurora 8.0 from VERSION() returns 23",
 			v:    ServerVersion{Major: 8, Minor: 0, Patch: 0, Flavor: "aurora-mysql"},
 			want: 23,
+		},
+		{
+			name: "Aurora 8.0 from basedir uses real patch",
+			v:    ServerVersion{Major: 8, Minor: 0, Patch: 28, Flavor: "aurora-mysql"},
+			want: 28,
 		},
 		{
 			name: "standard MySQL uses actual Patch",
@@ -289,9 +294,14 @@ func TestServerVersion_String(t *testing.T) {
 			want: "8.0.35 (percona-xtradb-cluster)",
 		},
 		{
-			name: "Aurora MySQL",
+			name: "Aurora from VERSION()",
 			v:    ServerVersion{Major: 8, Minor: 0, Patch: 0, Flavor: "aurora-mysql", AuroraVersion: "3.04.0"},
 			want: "8.0 (aurora-mysql 3.04.0)",
+		},
+		{
+			name: "Aurora from basedir shows MySQL compat patch",
+			v:    ServerVersion{Major: 8, Minor: 0, Patch: 28, Flavor: "aurora-mysql", AuroraVersion: "3.04.0"},
+			want: "8.0.28 (aurora-mysql 3.04.0)",
 		},
 	}
 
@@ -299,6 +309,94 @@ func TestServerVersion_String(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.v.String(); got != tt.want {
 				t.Errorf("String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestServerVersion_EnrichFromBasedir(t *testing.T) {
+	tests := []struct {
+		name         string
+		basedir      string
+		initial      ServerVersion
+		wantEnriched bool
+		wantFlavor   string
+		wantAurora   string
+		wantPatch    int
+		wantIsLTS    bool
+	}{
+		{
+			name:         "Aurora basedir with oscar prefix",
+			basedir:      "/rdsdbbin/oscar-8.0.mysql_aurora.3.04.0.0.32961.0/",
+			initial:      ServerVersion{Major: 8, Minor: 0, Patch: 28, Flavor: "mysql"},
+			wantEnriched: true,
+			wantFlavor:   "aurora-mysql",
+			wantAurora:   "3.04.0",
+			wantPatch:    28, // preserves real patch from VERSION()
+		},
+		{
+			name:         "Aurora basedir version 3.07.1",
+			basedir:      "/rdsdbbin/oscar-8.0.mysql_aurora.3.07.1.0.45678.0/",
+			initial:      ServerVersion{Major: 8, Minor: 0, Patch: 36, Flavor: "mysql"},
+			wantEnriched: true,
+			wantFlavor:   "aurora-mysql",
+			wantAurora:   "3.07.1",
+			wantPatch:    36,
+		},
+		{
+			name:         "Aurora basedir clears IsLTS",
+			basedir:      "/rdsdbbin/oscar-8.4.mysql_aurora.4.01.0.0.12345.0/",
+			initial:      ServerVersion{Major: 8, Minor: 4, Patch: 3, Flavor: "mysql", IsLTS: true},
+			wantEnriched: true,
+			wantFlavor:   "aurora-mysql",
+			wantAurora:   "4.01.0",
+			wantPatch:    3,
+			wantIsLTS:    false,
+		},
+		{
+			name:         "plain RDS basedir (not Aurora)",
+			basedir:      "/rdsdbbin/mysql/",
+			initial:      ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"},
+			wantEnriched: false,
+			wantFlavor:   "mysql",
+			wantPatch:    35,
+		},
+		{
+			name:         "local MySQL basedir",
+			basedir:      "/usr/",
+			initial:      ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"},
+			wantEnriched: false,
+			wantFlavor:   "mysql",
+			wantPatch:    35,
+		},
+		{
+			name:         "empty basedir",
+			basedir:      "",
+			initial:      ServerVersion{Major: 8, Minor: 0, Patch: 35, Flavor: "mysql"},
+			wantEnriched: false,
+			wantFlavor:   "mysql",
+			wantPatch:    35,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := tt.initial
+			got := v.EnrichFromBasedir(tt.basedir)
+			if got != tt.wantEnriched {
+				t.Errorf("EnrichFromBasedir() = %v, want %v", got, tt.wantEnriched)
+			}
+			if v.Flavor != tt.wantFlavor {
+				t.Errorf("Flavor = %q, want %q", v.Flavor, tt.wantFlavor)
+			}
+			if v.AuroraVersion != tt.wantAurora {
+				t.Errorf("AuroraVersion = %q, want %q", v.AuroraVersion, tt.wantAurora)
+			}
+			if v.IsLTS != tt.wantIsLTS {
+				t.Errorf("IsLTS = %v, want %v", v.IsLTS, tt.wantIsLTS)
+			}
+			if v.Patch != tt.wantPatch {
+				t.Errorf("Patch = %d, want %d", v.Patch, tt.wantPatch)
 			}
 		})
 	}
