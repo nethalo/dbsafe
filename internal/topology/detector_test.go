@@ -553,13 +553,17 @@ func TestDetect_AuroraWriter(t *testing.T) {
 	mock.ExpectQuery("SELECT VERSION\\(\\)").
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.mysql_aurora.3.04.0"))
 
-	// Mock read_only = OFF (writer)
+	// Mock read_only = OFF (Aurora leaves read_only=OFF on both Writer and Reader)
 	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
 
 	// Mock super_read_only
 	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
+
+	// Mock innodb_read_only = OFF (writer)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'innodb\\\\_read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("innodb_read_only", "OFF"))
 
 	info, err := Detect(db, false)
 	if err != nil {
@@ -578,9 +582,6 @@ func TestDetect_AuroraWriter(t *testing.T) {
 	if info.Version.AuroraVersion != "3.04.0" {
 		t.Errorf("expected AuroraVersion=3.04.0, got %s", info.Version.AuroraVersion)
 	}
-	if info.ReadOnly {
-		t.Error("expected ReadOnly=false for writer")
-	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
@@ -598,13 +599,17 @@ func TestDetect_AuroraReader(t *testing.T) {
 	mock.ExpectQuery("SELECT VERSION\\(\\)").
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.mysql_aurora.3.07.1"))
 
-	// Mock read_only = ON (reader/replica)
+	// Mock read_only = OFF (Aurora leaves read_only=OFF even on readers)
 	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
-		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
 
 	// Mock super_read_only
 	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
-		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
+
+	// Mock innodb_read_only = ON (reader — this is how Aurora distinguishes readers)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'innodb\\\\_read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("innodb_read_only", "ON"))
 
 	info, err := Detect(db, false)
 	if err != nil {
@@ -622,9 +627,6 @@ func TestDetect_AuroraReader(t *testing.T) {
 	}
 	if info.Version.AuroraVersion != "3.07.1" {
 		t.Errorf("expected AuroraVersion=3.07.1, got %s", info.Version.AuroraVersion)
-	}
-	if !info.ReadOnly {
-		t.Error("expected ReadOnly=true for Aurora reader")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -678,6 +680,10 @@ func TestDetect_AuroraWriter_FromBasedir(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("basedir", "/rdsdbbin/oscar-8.0.mysql_aurora.3.04.0.0.32961.0/"))
 
+	// Mock innodb_read_only = OFF (writer)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'innodb\\\\_read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("innodb_read_only", "OFF"))
+
 	info, err := Detect(db, false)
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
@@ -698,9 +704,6 @@ func TestDetect_AuroraWriter_FromBasedir(t *testing.T) {
 	if info.Version.Patch != 28 {
 		t.Errorf("expected Patch=28 (from VERSION()), got %d", info.Version.Patch)
 	}
-	if info.ReadOnly {
-		t.Error("expected ReadOnly=false for writer")
-	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unfulfilled expectations: %v", err)
@@ -718,13 +721,13 @@ func TestDetect_AuroraReader_FromBasedir(t *testing.T) {
 	mock.ExpectQuery("SELECT VERSION\\(\\)").
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("8.0.28"))
 
-	// Mock read_only = ON (reader)
+	// Mock read_only = OFF (Aurora leaves read_only=OFF even on readers)
 	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'read\\\\_only'").
-		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "ON"))
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("read_only", "OFF"))
 
 	// Mock super_read_only
 	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'super\\\\_read\\\\_only'").
-		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "ON"))
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("super_read_only", "OFF"))
 
 	// Not Aurora from VERSION() → falls through Galera/GR/replication to Standalone
 
@@ -753,6 +756,10 @@ func TestDetect_AuroraReader_FromBasedir(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).
 			AddRow("basedir", "/rdsdbbin/oscar-8.0.mysql_aurora.3.07.1.0.45678.0/"))
 
+	// Mock innodb_read_only = ON (reader — Aurora's way of marking readers)
+	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'innodb\\\\_read\\\\_only'").
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("innodb_read_only", "ON"))
+
 	info, err := Detect(db, false)
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
@@ -769,9 +776,6 @@ func TestDetect_AuroraReader_FromBasedir(t *testing.T) {
 	}
 	if info.Version.AuroraVersion != "3.07.1" {
 		t.Errorf("expected AuroraVersion=3.07.1, got %s", info.Version.AuroraVersion)
-	}
-	if !info.ReadOnly {
-		t.Error("expected ReadOnly=true for Aurora reader")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

@@ -79,7 +79,10 @@ func Detect(db *sql.DB, verbose bool) (*Info, error) {
 	if version.IsAurora() {
 		info.IsCloudManaged = true
 		info.CloudProvider = "aws-aurora"
-		if info.ReadOnly {
+		// Aurora sets innodb_read_only=ON on readers but leaves read_only=OFF on both;
+		// only innodb_read_only reliably distinguishes Writer from Reader.
+		iro, _ := mysql.GetVariable(db, "innodb_read_only")
+		if iro == "ON" {
 			info.Type = AuroraReader
 		} else {
 			info.Type = AuroraWriter
@@ -124,7 +127,8 @@ func Detect(db *sql.DB, verbose bool) (*Info, error) {
 	if info.Version.EnrichFromBasedir(basedir) {
 		info.IsCloudManaged = true
 		info.CloudProvider = "aws-aurora"
-		if info.ReadOnly {
+		iro, _ := mysql.GetVariable(db, "innodb_read_only")
+		if iro == "ON" {
 			info.Type = AuroraReader
 		} else {
 			info.Type = AuroraWriter
