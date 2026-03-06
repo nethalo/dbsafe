@@ -124,6 +124,11 @@ func TestRegression_FullPipeline(t *testing.T) {
 		Flavor:        "aurora-mysql",
 		AuroraVersion: "3.04.0",
 	}
+	vAuroraBasedir := mysql.ServerVersion{
+		Major: 8, Minor: 0, Patch: 28,
+		Flavor:        "aurora-mysql",
+		AuroraVersion: "3.04.0",
+	}
 
 	cases := []regressionCase{
 
@@ -276,6 +281,28 @@ func TestRegression_FullPipeline(t *testing.T) {
 			topoType:       topology.AuroraWriter,
 			tableSizeBytes: small,
 			wantAlgo:       AlgoInstant,
+		},
+		{
+			// Basedir-detected Aurora: Patch=28 from VERSION(), EffectivePatch()=28.
+			// 8.0.28 is still V8_0_Instant (requires 8.0.29 for V8_0_Full).
+			name:           "12a. Aurora basedir Patch=28 ADD COLUMN → INSTANT (V8_0_Instant)",
+			sql:            "ALTER TABLE orders ADD COLUMN notes TEXT",
+			version:        vAuroraBasedir,
+			topoType:       topology.AuroraWriter,
+			tableSizeBytes: small,
+			wantAlgo:       AlgoInstant,
+		},
+		{
+			// Basedir-detected Aurora COPY: gh-ost overridden to pt-osc.
+			name:              "12b. Aurora basedir Patch=28 COPY 2GB → PT-OSC (gh-ost overridden)",
+			sql:               "ALTER TABLE orders MODIFY COLUMN existing_col TEXT",
+			version:           vAuroraBasedir,
+			topoType:          topology.AuroraWriter,
+			tableSizeBytes:    large,
+			wantRisk:          RiskDangerous,
+			wantMethod:        ExecPtOSC,
+			wantNoAlternative: true,
+			wantClusterSubstr: []string{"Aurora"},
 		},
 
 		// ─────────────────────────────────────────────────────────────────

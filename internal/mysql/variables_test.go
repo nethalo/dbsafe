@@ -294,9 +294,14 @@ func TestServerVersion_String(t *testing.T) {
 			want: "8.0.35 (percona-xtradb-cluster)",
 		},
 		{
-			name: "Aurora MySQL",
+			name: "Aurora from VERSION()",
 			v:    ServerVersion{Major: 8, Minor: 0, Patch: 0, Flavor: "aurora-mysql", AuroraVersion: "3.04.0"},
 			want: "8.0 (aurora-mysql 3.04.0)",
+		},
+		{
+			name: "Aurora from basedir shows MySQL compat patch",
+			v:    ServerVersion{Major: 8, Minor: 0, Patch: 28, Flavor: "aurora-mysql", AuroraVersion: "3.04.0"},
+			want: "8.0.28 (aurora-mysql 3.04.0)",
 		},
 	}
 
@@ -311,13 +316,14 @@ func TestServerVersion_String(t *testing.T) {
 
 func TestServerVersion_EnrichFromBasedir(t *testing.T) {
 	tests := []struct {
-		name          string
-		basedir       string
-		initial       ServerVersion
-		wantEnriched  bool
-		wantFlavor    string
-		wantAurora    string
-		wantPatch     int
+		name         string
+		basedir      string
+		initial      ServerVersion
+		wantEnriched bool
+		wantFlavor   string
+		wantAurora   string
+		wantPatch    int
+		wantIsLTS    bool
 	}{
 		{
 			name:         "Aurora basedir with oscar prefix",
@@ -336,6 +342,16 @@ func TestServerVersion_EnrichFromBasedir(t *testing.T) {
 			wantFlavor:   "aurora-mysql",
 			wantAurora:   "3.07.1",
 			wantPatch:    36,
+		},
+		{
+			name:         "Aurora basedir clears IsLTS",
+			basedir:      "/rdsdbbin/oscar-8.4.mysql_aurora.4.01.0.0.12345.0/",
+			initial:      ServerVersion{Major: 8, Minor: 4, Patch: 3, Flavor: "mysql", IsLTS: true},
+			wantEnriched: true,
+			wantFlavor:   "aurora-mysql",
+			wantAurora:   "4.01.0",
+			wantPatch:    3,
+			wantIsLTS:    false,
 		},
 		{
 			name:         "plain RDS basedir (not Aurora)",
@@ -375,6 +391,9 @@ func TestServerVersion_EnrichFromBasedir(t *testing.T) {
 			}
 			if v.AuroraVersion != tt.wantAurora {
 				t.Errorf("AuroraVersion = %q, want %q", v.AuroraVersion, tt.wantAurora)
+			}
+			if v.IsLTS != tt.wantIsLTS {
+				t.Errorf("IsLTS = %v, want %v", v.IsLTS, tt.wantIsLTS)
 			}
 			if v.Patch != tt.wantPatch {
 				t.Errorf("Patch = %d, want %d", v.Patch, tt.wantPatch)
