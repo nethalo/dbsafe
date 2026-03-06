@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-03-06
+
+### Fixed
+- Aurora MySQL Reader endpoint was incorrectly detected as Writer — now checks `innodb_read_only` instead of `read_only` to distinguish Writer from Reader (#54)
+
 ## [0.6.1] - 2026-03-06
 
 ### Fixed
