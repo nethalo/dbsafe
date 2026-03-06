@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-03-06
+
+### Fixed
+- Aurora MySQL instances were detected as `Standalone (aws-rds)` instead of `Aurora Writer` / `Aurora Reader`. Real Aurora returns the MySQL compatibility version from `SELECT VERSION()` (e.g., `8.0.28`); the Aurora version string only appears in `@@basedir`. Detection now parses `mysql_aurora.X.Y.Z` from basedir as a fallback (#50, #51, #52)
+- `EffectivePatch()` now uses the real MySQL compatibility patch from `VERSION()` (e.g., 28) when Aurora is detected via basedir, instead of the hardcoded conservative estimate of 23
+- Version display now shows the MySQL compat patch when known (e.g., `8.0.28 (aurora-mysql 3.04.0)`)
+
 ## [0.6.0] - 2026-03-05
 
 ### Added
