@@ -117,10 +117,19 @@ func Detect(db *sql.DB, verbose bool) (*Info, error) {
 	// Default: standalone
 	info.Type = Standalone
 
-	// RDS detection (best-effort): check basedir for rdsdbbin marker.
-	// This annotates without changing topology type — RDS uses standard MySQL replication.
+	// Cloud detection: check basedir for Aurora or RDS markers.
+	// Real Aurora returns standard MySQL version from VERSION() (e.g., "8.0.28");
+	// the Aurora version string is only in basedir (e.g., "oscar-8.0.mysql_aurora.3.04.0...").
 	basedir, _ := mysql.GetVariable(db, "basedir")
-	if strings.Contains(basedir, "rdsdbbin") {
+	if info.Version.EnrichFromBasedir(basedir) {
+		info.IsCloudManaged = true
+		info.CloudProvider = "aws-aurora"
+		if info.ReadOnly {
+			info.Type = AuroraReader
+		} else {
+			info.Type = AuroraWriter
+		}
+	} else if strings.Contains(basedir, "rdsdbbin") {
 		info.IsCloudManaged = true
 		info.CloudProvider = "aws-rds"
 	}

@@ -34,13 +34,30 @@ func (v ServerVersion) IsAurora() bool {
 }
 
 // EffectivePatch returns the MySQL-compatible patch version for DDL matrix lookups.
-// Aurora 3.x (MySQL 8.0 compat) is based on MySQL 8.0.23, so we use 23 as the
-// effective patch level for algorithm classification.
+// When Aurora is detected via VERSION() (e.g., "8.0.mysql_aurora.3.04.0"), Patch is 0
+// and we fall back to 23 (Aurora 3.x ≈ MySQL 8.0.23). When detected via basedir,
+// Patch already holds the real MySQL compat version from VERSION() (e.g., 28).
 func (v ServerVersion) EffectivePatch() int {
-	if v.IsAurora() && v.Major == 8 && v.Minor == 0 {
+	if v.IsAurora() && v.Major == 8 && v.Minor == 0 && v.Patch == 0 {
 		return 23
 	}
 	return v.Patch
+}
+
+// EnrichFromBasedir checks if basedir contains an Aurora MySQL marker
+// (e.g., "/rdsdbbin/oscar-8.0.mysql_aurora.3.04.0.0.32961.0/") and updates
+// the version fields. This handles real Aurora instances where VERSION() returns
+// the MySQL compatibility version (e.g., "8.0.28") without Aurora markers.
+func (v *ServerVersion) EnrichFromBasedir(basedir string) bool {
+	re := regexp.MustCompile(`mysql_aurora\.(\d+\.\d+\.\d+)`)
+	m := re.FindStringSubmatch(basedir)
+	if len(m) < 2 {
+		return false
+	}
+	v.Flavor = "aurora-mysql"
+	v.AuroraVersion = m[1]
+	v.IsLTS = false
+	return true
 }
 
 // AtLeast returns true if the server version is >= the given version.
