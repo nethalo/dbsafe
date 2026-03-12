@@ -53,6 +53,7 @@ func init() {
 	mustBindFlag("host", rootCmd.PersistentFlags().Lookup("host"))
 	mustBindFlag("port", rootCmd.PersistentFlags().Lookup("port"))
 	mustBindFlag("user", rootCmd.PersistentFlags().Lookup("user"))
+	mustBindFlag("password", rootCmd.PersistentFlags().Lookup("password"))
 	mustBindFlag("database", rootCmd.PersistentFlags().Lookup("database"))
 	mustBindFlag("socket", rootCmd.PersistentFlags().Lookup("socket"))
 	mustBindFlag("format", rootCmd.PersistentFlags().Lookup("format"))
@@ -98,6 +99,9 @@ func initConfig() {
 		}
 		if !rootCmd.PersistentFlags().Changed("user") && viper.IsSet("connections.default.user") {
 			viper.Set("user", viper.GetString("connections.default.user"))
+		}
+		if !rootCmd.PersistentFlags().Changed("password") && viper.IsSet("connections.default.password") {
+			viper.Set("password", viper.GetString("connections.default.password"))
 		}
 		if !rootCmd.PersistentFlags().Changed("database") && viper.IsSet("connections.default.database") {
 			viper.Set("database", viper.GetString("connections.default.database"))
