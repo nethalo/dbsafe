@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-03-11
+
+### Fixed
+- `--password` / `-p` flag value was silently ignored — only `DBSAFE_PASSWORD` env var worked. The password flag is now bound to viper like all other connection flags. Config file `connections.default.password` is also supported (#55)
+
 ## [0.6.2] - 2026-03-06
 
 ### Fixed
