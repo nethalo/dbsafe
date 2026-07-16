@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -646,8 +647,28 @@ func analyzeDDL(input Input, result *Result) {
 		result.OptimizedDDL = buildOptimizedDDL(input.Parsed.RawSQL, result.Classification)
 	}
 
+	// Warn when an explicit ALGORITHM=/LOCK= request conflicts with what the operation supports.
+	checkRequestedAlgorithmLock(input.Parsed, result)
+
 	// Generate rollback SQL
 	generateDDLRollback(input, result)
+}
+
+// Regexes to strip explicit ALGORITHM=/LOCK= clauses from an ALTER TABLE statement.
+// Values are anchored to the valid keyword sets so a column named "lock" is never matched.
+var (
+	// Clause preceded by a comma: "..., ALGORITHM=INPLACE" (mid or end of option list).
+	reTrailingAlgoLock = regexp.MustCompile(`(?i),\s*(?:ALGORITHM\s*=?\s*(?:INSTANT|INPLACE|COPY|DEFAULT)|LOCK\s*=?\s*(?:NONE|SHARED|EXCLUSIVE|DEFAULT))\b`)
+	// Clause followed by a comma: "ALTER TABLE t ALGORITHM=INPLACE, ADD ..." (first in option list).
+	reLeadingAlgoLock = regexp.MustCompile(`(?i)\b(?:ALGORITHM\s*=?\s*(?:INSTANT|INPLACE|COPY|DEFAULT)|LOCK\s*=?\s*(?:NONE|SHARED|EXCLUSIVE|DEFAULT))\s*,\s*`)
+)
+
+// stripAlgorithmLockClauses removes explicit ALGORITHM=/LOCK= clauses from an ALTER TABLE
+// statement so canonical hints can be re-appended without duplication.
+func stripAlgorithmLockClauses(sql string) string {
+	sql = reTrailingAlgoLock.ReplaceAllString(sql, "")
+	sql = reLeadingAlgoLock.ReplaceAllString(sql, "")
+	return strings.TrimSpace(sql)
 }
 
 // buildOptimizedDDL appends ALGORITHM and LOCK hints to an ALTER TABLE statement so the user
@@ -657,7 +678,70 @@ func buildOptimizedDDL(rawSQL string, c DDLClassification) string {
 		return ""
 	}
 	sql := strings.TrimRight(strings.TrimSpace(rawSQL), ";")
+	sql = stripAlgorithmLockClauses(sql)
 	return fmt.Sprintf("%s, ALGORITHM=%s, LOCK=%s;", sql, c.Algorithm, c.Lock)
+}
+
+// algorithmCost orders algorithms from cheapest to most expensive. Unknown values return -1.
+func algorithmCost(a string) int {
+	switch strings.ToUpper(a) {
+	case "INSTANT":
+		return 0
+	case "INPLACE":
+		return 1
+	case "COPY":
+		return 2
+	}
+	return -1
+}
+
+// lockCost orders lock levels from least to most restrictive. Unknown values return -1.
+func lockCost(l string) int {
+	switch strings.ToUpper(l) {
+	case "NONE":
+		return 0
+	case "SHARED":
+		return 1
+	case "EXCLUSIVE":
+		return 2
+	}
+	return -1
+}
+
+// checkRequestedAlgorithmLock compares an explicit ALGORITHM=/LOCK= request in the statement
+// against the analyzed classification and warns when MySQL would reject the statement
+// (requested mode less restrictive than the operation supports) or when the request forces
+// a more expensive mode than necessary.
+func checkRequestedAlgorithmLock(parsed *parser.ParsedSQL, result *Result) {
+	c := result.Classification
+
+	if req := algorithmCost(parsed.RequestedAlgorithm); req >= 0 {
+		supported := algorithmCost(string(c.Algorithm))
+		switch {
+		case supported < 0:
+			// DEPENDS or unclassified: cannot validate the request.
+		case req < supported:
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"Requested ALGORITHM=%s is not supported for this operation (requires %s). MySQL will reject this statement with ER_ALTER_OPERATION_NOT_SUPPORTED.",
+				strings.ToUpper(parsed.RequestedAlgorithm), c.Algorithm,
+			))
+		case req > supported:
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"Requested ALGORITHM=%s forces a more expensive mode than necessary: this operation supports ALGORITHM=%s.",
+				strings.ToUpper(parsed.RequestedAlgorithm), c.Algorithm,
+			))
+		}
+	}
+
+	if req := lockCost(parsed.RequestedLock); req >= 0 {
+		supported := lockCost(string(c.Lock))
+		if supported >= 0 && req < supported {
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"Requested LOCK=%s is not supported for this operation (requires LOCK=%s). MySQL will reject this statement.",
+				strings.ToUpper(parsed.RequestedLock), c.Lock,
+			))
+		}
+	}
 }
 
 func analyzeDML(input Input, result *Result) {
@@ -1766,8 +1850,11 @@ func extractAlterSpec(sql string) string {
 		return "" // Couldn't find table name
 	}
 
-	// Return everything after the table name
+	// Return everything after the table name. Explicit ALGORITHM=/LOCK= hints are
+	// stripped: gh-ost and pt-osc run their own ALTER on the shadow table, and the
+	// hints would defeat (or conflict with) the online migration.
 	alterSpec := strings.TrimSpace(remaining[tableEnd:])
+	alterSpec = stripAlgorithmLockClauses(strings.TrimRight(alterSpec, ";"))
 	return alterSpec
 }
 

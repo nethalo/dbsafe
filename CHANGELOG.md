@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- `ALTER TABLE ... ALGORITHM=X, LOCK=Y` broke analysis: the hint clauses were counted as extra sub-operations, misclassifying single-op statements as `MULTIPLE_OPS` with unknown (`OTHER`) operations. The parser now recognizes them as execution hints, exposing them as `RequestedAlgorithm`/`RequestedLock` (#57)
+- Suggested DDL no longer duplicates `ALGORITHM`/`LOCK` clauses when the input statement already contains them
+- gh-ost / pt-osc generated commands strip `ALGORITHM`/`LOCK` hints from the `--alter` spec
+
+### Added
+- Warning when an explicit `ALGORITHM=`/`LOCK=` request conflicts with what the operation supports (MySQL would reject it) or forces a more expensive mode than necessary
+
 ## [0.6.3] - 2026-03-11
 
 ### Fixed

@@ -1557,3 +1557,102 @@ func TestParse_AlterTableRenameTo_ExtractsNewTableName(t *testing.T) {
 		t.Errorf("NewTableName = %q, want archived_users", result.NewTableName)
 	}
 }
+
+// Issue #57: ALGORITHM= / LOCK= clauses must not count as sub-operations.
+// Before the fix, "ADD COLUMN c INT, ALGORITHM=INPLACE, LOCK=NONE" was
+// misclassified as MULTIPLE_OPS with OTHER sub-operations.
+func TestParse_AlgorithmLockClauses(t *testing.T) {
+	tests := []struct {
+		name          string
+		sql           string
+		ddlOp         DDLOperation
+		wantAlgorithm string
+		wantLock      string
+	}{
+		{
+			name:          "add column with algorithm and lock",
+			sql:           "ALTER TABLE users ADD COLUMN email VARCHAR(255), ALGORITHM=INPLACE, LOCK=NONE",
+			ddlOp:         AddColumn,
+			wantAlgorithm: "inplace",
+			wantLock:      "none",
+		},
+		{
+			name:          "add column with algorithm only",
+			sql:           "ALTER TABLE users ADD COLUMN email VARCHAR(255), ALGORITHM=INSTANT",
+			ddlOp:         AddColumn,
+			wantAlgorithm: "instant",
+		},
+		{
+			name:     "add column with lock only",
+			sql:      "ALTER TABLE users ADD COLUMN email VARCHAR(255), LOCK=SHARED",
+			ddlOp:    AddColumn,
+			wantLock: "shared",
+		},
+		{
+			name:          "clauses before the operation",
+			sql:           "ALTER TABLE users ALGORITHM=COPY, LOCK=EXCLUSIVE, ADD COLUMN email VARCHAR(255)",
+			ddlOp:         AddColumn,
+			wantAlgorithm: "copy",
+			wantLock:      "exclusive",
+		},
+		{
+			name:          "add index with algorithm and lock",
+			sql:           "ALTER TABLE users ADD INDEX idx_email (email), ALGORITHM=INPLACE, LOCK=NONE",
+			ddlOp:         AddIndex,
+			wantAlgorithm: "inplace",
+			wantLock:      "none",
+		},
+		{
+			name:          "drop+add index pattern still detected with algorithm",
+			sql:           "ALTER TABLE users DROP INDEX idx1, ADD INDEX idx1 (email) USING HASH, ALGORITHM=INPLACE",
+			ddlOp:         ChangeIndexType,
+			wantAlgorithm: "inplace",
+		},
+		{
+			name:          "genuine multi-op keeps MULTIPLE_OPS",
+			sql:           "ALTER TABLE users ADD COLUMN a INT, ADD COLUMN b INT, ALGORITHM=INPLACE",
+			ddlOp:         MultipleOps,
+			wantAlgorithm: "inplace",
+		},
+		{
+			name:          "algorithm default",
+			sql:           "ALTER TABLE users ADD COLUMN email VARCHAR(255), ALGORITHM=DEFAULT",
+			ddlOp:         AddColumn,
+			wantAlgorithm: "default",
+		},
+		{
+			name:          "only algorithm and lock clauses",
+			sql:           "ALTER TABLE users ALGORITHM=INPLACE, LOCK=NONE",
+			ddlOp:         OtherDDL,
+			wantAlgorithm: "inplace",
+			wantLock:      "none",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Parse(tt.sql)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.Type != DDL {
+				t.Errorf("Type = %q, want DDL", result.Type)
+			}
+			if result.DDLOp != tt.ddlOp {
+				t.Errorf("DDLOp = %q, want %q", result.DDLOp, tt.ddlOp)
+			}
+			if result.RequestedAlgorithm != tt.wantAlgorithm {
+				t.Errorf("RequestedAlgorithm = %q, want %q", result.RequestedAlgorithm, tt.wantAlgorithm)
+			}
+			if result.RequestedLock != tt.wantLock {
+				t.Errorf("RequestedLock = %q, want %q", result.RequestedLock, tt.wantLock)
+			}
+			// The hint clauses must never surface as sub-operations.
+			for _, sub := range result.SubOperations {
+				if sub.Op == OtherDDL {
+					t.Errorf("found OTHER sub-operation; ALGORITHM/LOCK clause leaked into SubOperations")
+				}
+			}
+		})
+	}
+}

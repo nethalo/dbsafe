@@ -109,37 +109,39 @@ type SubOperation struct {
 
 // ParsedSQL holds the result of parsing a SQL statement.
 type ParsedSQL struct {
-	Type              StatementType
-	RawSQL            string
-	Database          string // extracted from qualified table name if present
-	Table             string
-	DDLOp             DDLOperation
-	DMLOp             DMLOperation
-	WhereClause       string // for DML: the WHERE as string
-	HasWhere          bool
-	ColumnName        string         // for ADD/DROP/MODIFY COLUMN
-	OldColumnName     string         // for CHANGE COLUMN
-	NewColumnName     string         // for CHANGE COLUMN
-	NewColumnType     string         // for CHANGE/MODIFY COLUMN: the new column type (e.g. "decimal(14,4)")
-	NewColumnCharset  string         // for MODIFY COLUMN: explicit CHARACTER SET clause if present (lowercase)
-	NewColumnNullable *bool          // for MODIFY COLUMN: nil=unspecified, *true=NULL, *false=NOT NULL
-	ColumnDef         string         // full column definition for ADD COLUMN
-	IsFirstAfter      bool           // ADD COLUMN/MODIFY COLUMN ... FIRST or AFTER
-	IndexName         string         // for ADD/DROP INDEX
-	HasNotNull        bool           // ADD COLUMN ... NOT NULL
-	HasDefault        bool           // ADD COLUMN ... DEFAULT
-	HasAutoIncrement  bool           // ADD COLUMN ... AUTO_INCREMENT
-	IsGeneratedStored bool           // ADD/MODIFY COLUMN ... AS (...) STORED
-	IsGeneratedColumn bool           // ADD/MODIFY COLUMN has an AS (...) expression (STORED or VIRTUAL)
-	SubOperations     []SubOperation // for multi-op ALTER TABLE: per-sub-op details
-	TablespaceName    string         // for ALTER TABLESPACE
-	NewTablespaceName string         // for ALTER TABLESPACE ... RENAME TO
-	IndexColumns      []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names
-	IsUniqueIndex     bool           // true when ADD UNIQUE KEY/INDEX
-	NewEngine         string         // for ENGINE=<name>: the target engine (lowercased)
-	CheckExpr         string         // for ADD CONSTRAINT ... CHECK: the check expression
-	NewTableName      string         // for RENAME TABLE: the new table name
-	NewIndexName      string         // for RENAME INDEX: the new index name
+	Type               StatementType
+	RawSQL             string
+	Database           string // extracted from qualified table name if present
+	Table              string
+	DDLOp              DDLOperation
+	DMLOp              DMLOperation
+	WhereClause        string // for DML: the WHERE as string
+	HasWhere           bool
+	ColumnName         string         // for ADD/DROP/MODIFY COLUMN
+	OldColumnName      string         // for CHANGE COLUMN
+	NewColumnName      string         // for CHANGE COLUMN
+	NewColumnType      string         // for CHANGE/MODIFY COLUMN: the new column type (e.g. "decimal(14,4)")
+	NewColumnCharset   string         // for MODIFY COLUMN: explicit CHARACTER SET clause if present (lowercase)
+	NewColumnNullable  *bool          // for MODIFY COLUMN: nil=unspecified, *true=NULL, *false=NOT NULL
+	ColumnDef          string         // full column definition for ADD COLUMN
+	IsFirstAfter       bool           // ADD COLUMN/MODIFY COLUMN ... FIRST or AFTER
+	IndexName          string         // for ADD/DROP INDEX
+	HasNotNull         bool           // ADD COLUMN ... NOT NULL
+	HasDefault         bool           // ADD COLUMN ... DEFAULT
+	HasAutoIncrement   bool           // ADD COLUMN ... AUTO_INCREMENT
+	IsGeneratedStored  bool           // ADD/MODIFY COLUMN ... AS (...) STORED
+	IsGeneratedColumn  bool           // ADD/MODIFY COLUMN has an AS (...) expression (STORED or VIRTUAL)
+	SubOperations      []SubOperation // for multi-op ALTER TABLE: per-sub-op details
+	TablespaceName     string         // for ALTER TABLESPACE
+	NewTablespaceName  string         // for ALTER TABLESPACE ... RENAME TO
+	IndexColumns       []string       // for ADD PRIMARY KEY / ADD INDEX: the indexed column names
+	IsUniqueIndex      bool           // true when ADD UNIQUE KEY/INDEX
+	NewEngine          string         // for ENGINE=<name>: the target engine (lowercased)
+	CheckExpr          string         // for ADD CONSTRAINT ... CHECK: the check expression
+	NewTableName       string         // for RENAME TABLE: the new table name
+	NewIndexName       string         // for RENAME INDEX: the new index name
+	RequestedAlgorithm string         // explicit ALGORITHM=... clause (lowercase: instant/inplace/copy/default), "" if absent
+	RequestedLock      string         // explicit LOCK=... clause (lowercase: none/shared/exclusive/default), "" if absent
 }
 
 var (
@@ -308,29 +310,45 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 		}
 	}
 
-	if len(alter.AlterOptions) == 0 {
+	// Strip ALGORITHM=... / LOCK=... clauses before classification: they are
+	// execution hints, not schema-change operations. Without this, a single-op
+	// ALTER like "ADD COLUMN c INT, ALGORITHM=INPLACE, LOCK=NONE" would be
+	// misclassified as MULTIPLE_OPS with unknown (OTHER) sub-operations.
+	opts := make([]sqlparser.AlterOption, 0, len(alter.AlterOptions))
+	for _, opt := range alter.AlterOptions {
+		switch o := opt.(type) {
+		case sqlparser.AlgorithmValue:
+			result.RequestedAlgorithm = strings.ToLower(string(o))
+		case *sqlparser.LockOption:
+			result.RequestedLock = o.Type.ToString()
+		default:
+			opts = append(opts, opt)
+		}
+	}
+
+	if len(opts) == 0 {
 		result.DDLOp = OtherDDL
 		return
 	}
 
 	// If multiple operations, check for well-known two-op patterns before falling back.
-	if len(alter.AlterOptions) > 1 {
+	if len(opts) > 1 {
 		// Pattern: exactly DROP INDEX + ADD INDEX on the same index name → index type change.
-		if len(alter.AlterOptions) == 2 {
-			if indexName, ok := detectDropAddIndexPattern(alter.AlterOptions); ok {
+		if len(opts) == 2 {
+			if indexName, ok := detectDropAddIndexPattern(opts); ok {
 				result.DDLOp = ChangeIndexType
 				result.IndexName = indexName
 				return
 			}
 			// Pattern: exactly DROP PRIMARY KEY + ADD PRIMARY KEY → primary key replacement.
-			if detectDropAddPKPattern(alter.AlterOptions) {
+			if detectDropAddPKPattern(opts) {
 				result.DDLOp = ReplacePrimaryKey
 				return
 			}
 		}
 
 		result.DDLOp = MultipleOps
-		for _, opt := range alter.AlterOptions {
+		for _, opt := range opts {
 			subOp := extractAlterOpDetails(opt)
 			result.SubOperations = append(result.SubOperations, subOp)
 			// Propagate AUTO_INCREMENT flag so the analyzer can apply the correct
@@ -343,10 +361,10 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 	}
 
 	// Single operation
-	result.DDLOp = classifySingleAlterOp(alter.AlterOptions[0])
+	result.DDLOp = classifySingleAlterOp(opts[0])
 
 	// Extract details via the shared helper and populate SubOperations[0].
-	subOp := extractAlterOpDetails(alter.AlterOptions[0])
+	subOp := extractAlterOpDetails(opts[0])
 	result.SubOperations = []SubOperation{subOp}
 
 	// Copy common fields to top-level ParsedSQL for backward compatibility with
@@ -368,7 +386,7 @@ func classifyAlterTable(alter *sqlparser.AlterTable, result *ParsedSQL) {
 	result.CheckExpr = subOp.CheckExpr
 
 	// Handle fields not in SubOperation (single-op only).
-	switch opt := alter.AlterOptions[0].(type) {
+	switch opt := opts[0].(type) {
 	case *sqlparser.AddColumns:
 		if len(opt.Columns) > 0 {
 			col := opt.Columns[0]
