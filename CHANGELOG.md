@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-07-16
+
 ### Fixed
 - `ALTER TABLE ... ALGORITHM=X, LOCK=Y` broke analysis: the hint clauses were counted as extra sub-operations, misclassifying single-op statements as `MULTIPLE_OPS` with unknown (`OTHER`) operations. The parser now recognizes them as execution hints, exposing them as `RequestedAlgorithm`/`RequestedLock` (#57)
 - Suggested DDL no longer duplicates `ALGORITHM`/`LOCK` clauses when the input statement already contains them
